@@ -362,14 +362,27 @@
 
         // Initialize Google Identity Services
         function gisLoaded() {
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: '', // defined later
-                ux_mode: 'popup',
-            });
-            gisInited = true;
-            maybeEnableButtons();
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    ux_mode: 'popup',
+                    callback: (response) => {
+                        if (response.error !== undefined) {
+                            throw (response);
+                        }
+                        accessToken = response.access_token;
+                        gapi.client.setToken({ access_token: accessToken });
+                        localStorage.setItem('google_access_token', accessToken);
+                        showMainContent();
+                        loadAllData();
+                    },
+                });
+                gisInited = true;
+                maybeEnableButtons();
+            } catch (err) {
+                console.error('Error initializing Google Identity Services:', err);
+            }
         }
 
         function maybeEnableButtons() {
@@ -387,16 +400,6 @@
 
         // Handle authorization
         function handleAuthClick() {
-            tokenClient.callback = async (resp) => {
-                if (resp.error !== undefined) {
-                    throw (resp);
-                }
-                accessToken = gapi.client.getToken().access_token;
-                localStorage.setItem('google_access_token', accessToken);
-                showMainContent();
-                loadAllData();
-            };
-
             if (gapi.client.getToken() === null) {
                 tokenClient.requestAccessToken({prompt: 'consent'});
             } else {
