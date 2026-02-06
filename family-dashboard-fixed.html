@@ -363,22 +363,35 @@
                 tokenClient = window.google.accounts.oauth2.initTokenClient({
                     client_id: CLIENT_ID,
                     scope: SCOPES,
-                    callback: (response) => {
-                        if (response.error !== undefined) {
-                            console.error('Auth error:', response);
-                            return;
-                        }
-                        console.log('Auth successful');
-                        showMainContent();
-                        loadAllData();
-                    },
+                    ux_mode: 'redirect',
+                    redirect_uri: window.location.origin + window.location.pathname,
+                    callback: '', // Not used in redirect mode
                 });
                 gisInited = true;
                 console.log('TokenClient created:', tokenClient);
                 maybeEnableButtons();
+                
+                // Check if we're returning from OAuth
+                checkForAuthResponse();
             } else {
                 console.error('Google Identity Services not available');
                 setTimeout(gisLoaded, 100); // Retry
+            }
+        }
+
+        // Check if we have an auth response in the URL
+        function checkForAuthResponse() {
+            const hash = window.location.hash;
+            if (hash.includes('access_token')) {
+                const params = new URLSearchParams(hash.substring(1));
+                const accessToken = params.get('access_token');
+                if (accessToken) {
+                    window.gapi.client.setToken({ access_token: accessToken });
+                    // Clean up URL
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    showMainContent();
+                    loadAllData();
+                }
             }
         }
 
