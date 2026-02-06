@@ -337,7 +337,16 @@
         ];
 
         // Family member names for smart categorization
-        const FAMILY_MEMBERS = ['Jonathan', 'Sarah', 'Emma', 'Jack', 'Olivia'];
+        const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
+        
+        // Name variations for smart matching
+        const NAME_VARIATIONS = {
+            'Jonathan': ['jonathan', 'jon'],
+            'Alex': ['alex', 'alexandra'],
+            'Rufus': ['rufus'],
+            'Madeline': ['madeline', 'maddie', 'maddy'],
+            'Theo': ['theo', 'theodore']
+        };
 
         let tokenClient;
         let gapiInited = false;
@@ -478,12 +487,17 @@
             
             const assignedMembers = [];
             
+            // Check if any family member names or variations appear in the event
             FAMILY_MEMBERS.forEach(member => {
-                if (text.includes(member.toLowerCase())) {
+                const variations = NAME_VARIATIONS[member] || [member.toLowerCase()];
+                const matchFound = variations.some(variation => text.includes(variation));
+                
+                if (matchFound) {
                     assignedMembers.push(member);
                 }
             });
             
+            // If no specific members found, assign to everyone (true family events)
             if (assignedMembers.length === 0) {
                 return FAMILY_MEMBERS;
             }
