@@ -20,7 +20,7 @@
                 <div class="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="15" rx="1"/></svg>
                 </div>
-                <h1 class="text-xl font-bold tracking-tight">FamilyHub</h1>
+                <h1 class="text-xl font-bold tracking-tight text-slate-800">FamilyHub</h1>
             </div>
 
             <nav class="space-y-1.5 flex-grow" id="nav-filters">
@@ -69,8 +69,8 @@
                     <div class="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100">
                         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     </div>
-                    <h3 class="text-2xl font-bold text-slate-800 mb-3">Calendar Sync Required</h3>
-                    <p class="text-slate-500 mb-10 text-base leading-relaxed">Securely authorize access to your family calendars to populate your dashboard.</p>
+                    <h3 class="text-2xl font-bold text-slate-800 mb-3 text-center">Calendar Sync Required</h3>
+                    <p class="text-slate-500 mb-10 text-base leading-relaxed text-center">Securely authorize access to your family calendars to populate your dashboard.</p>
                     <button onclick="handleAuthAction()" class="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95">Authorize Google Access</button>
                 </div>
 
@@ -80,7 +80,10 @@
                 <div id="debug-info" class="mt-auto p-4 bg-slate-900 text-slate-300 text-[10px] font-mono rounded-xl">
                     <div class="flex items-center justify-between mb-2 border-b border-slate-800 pb-1">
                         <span class="text-slate-500 uppercase tracking-widest">System Monitor</span>
-                        <button onclick="fetchEvents()" class="text-indigo-400 hover:text-white uppercase">Refresh Data</button>
+                        <div class="flex gap-4">
+                            <button onclick="clearHashAndRefresh()" class="text-rose-400 hover:text-white uppercase">Reset Session</button>
+                            <button onclick="fetchEvents()" class="text-indigo-400 hover:text-white uppercase">Refresh Data</button>
+                        </div>
                     </div>
                     <div id="debug-log" class="space-y-1"></div>
                 </div>
@@ -91,18 +94,32 @@
     <script>
         const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
         const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
-        const CALENDAR_IDS = ['primary', 'jonathan.bound@gmail.com', 'family07456545553640322749@group.calendar.google.com'];
+        
+        const CALENDAR_IDS = [
+            'primary',
+            'jonathan.bound@gmail.com',
+            'family07456545553640322749@group.calendar.google.com'
+        ];
+        
         const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
-        const NAME_VARIATIONS = { 'Jonathan': ['jonathan', 'jon'], 'Alex': ['alex', 'alexandra'], 'Rufus': ['rufus'], 'Madeline': ['madeline', 'maddie', 'maddy'], 'Theo': ['theo', 'theodore'] };
+        const NAME_VARIATIONS = {
+            'Jonathan': ['jonathan', 'jon'], 
+            'Alex': ['alex', 'alexandra'], 
+            'Rufus': ['rufus'], 
+            'Madeline': ['madeline', 'maddie', 'maddy'], 
+            'Theo': ['theo', 'theodore']
+        };
 
-        let currentView = 'today', allEvents = [], tokenClient, accessToken = null;
+        let currentView = 'today', allEvents = [], accessToken = null;
 
         function logDebug(msg, isError = false) {
             const logEl = document.getElementById('debug-log');
+            if (!logEl) return;
             const entry = document.createElement('div');
             entry.className = isError ? 'text-rose-400 font-bold' : 'text-emerald-400';
             entry.innerText = `> ${msg}`;
             logEl.appendChild(entry);
+            console.log(msg);
         }
 
         function setView(view) {
@@ -116,86 +133,172 @@
             renderGrid();
         }
 
+        function clearHashAndRefresh() {
+            window.location.hash = '';
+            window.location.reload();
+        }
+
         function categorizeEvent(event) {
             const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
-            const assigned = FAMILY_MEMBERS.filter(member => (NAME_VARIATIONS[member] || [member.toLowerCase()]).some(v => text.includes(v)));
+            const assigned = FAMILY_MEMBERS.filter(member => 
+                (NAME_VARIATIONS[member] || [member.toLowerCase()]).some(v => text.includes(v))
+            );
             return assigned.length === 0 ? FAMILY_MEMBERS : assigned;
         }
 
         async function fetchEvents(token) {
             accessToken = token || accessToken;
             if (!accessToken) return;
+
             document.getElementById('loading-spinner').classList.remove('hidden');
-            logDebug("Starting Fetch...");
-            const now = new Date(); now.setHours(0,0,0,0);
+            logDebug("Starting Fetch via REST API...");
+            
+            const now = new Date();
+            now.setHours(0,0,0,0);
             const timeMin = now.toISOString();
             const timeMax = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000)).toISOString();
 
             try {
                 let fetched = [];
                 const seenEventIds = new Set();
+
                 for (const id of CALENDAR_IDS) {
-                    logDebug(`Requesting: ${id}...`);
+                    logDebug(`Requesting calendar: ${id}...`);
                     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(id)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`;
-                    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${accessToken}` } });
-                    if (!response.ok) { logDebug(`Alert: ${id} failed (${response.status}).`, true); continue; }
+                    
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json();
+                        logDebug(`Alert: ${id} failed (${response.status}). ${err.error?.message || ''}`, true);
+                        continue;
+                    }
+
                     const data = await response.json();
                     if (data.items) {
-                        logDebug(`Success: Found ${data.items.length} events in ${id}`);
+                        logDebug(`Found ${data.items.length} events in ${id}`);
                         data.items.forEach(item => {
                             if (!seenEventIds.has(item.id)) {
                                 seenEventIds.add(item.id);
-                                fetched.push({ id: item.id, summary: item.summary, assignedTo: categorizeEvent(item), calendarName: (id === 'primary' || id.includes('gmail')) ? 'Personal' : 'Family', start_date: new Date(item.start.dateTime || item.start.date) });
+                                fetched.push({
+                                    id: item.id,
+                                    summary: item.summary,
+                                    assignedTo: categorizeEvent(item),
+                                    calendarName: (id === 'primary' || id.includes('gmail')) ? 'Personal' : 'Family',
+                                    start_date: new Date(item.start.dateTime || item.start.date)
+                                });
                             }
                         });
                     }
                 }
+
                 allEvents = fetched.sort((a, b) => a.start_date - b.start_date);
-                logDebug(`Render complete. Total unique events: ${allEvents.length}`);
-                renderGrid(); showDashboard();
-            } catch (err) { logDebug(`Error: ${err.message}`, true); showLogin(); }
-            finally { document.getElementById('loading-spinner').classList.add('hidden'); }
+                logDebug(`Dashboard Updated. Total events: ${allEvents.length}`);
+                
+                renderGrid();
+                showDashboard();
+            } catch (err) {
+                logDebug(`Critical Failure: ${err.message}`, true);
+                showLogin();
+            } finally {
+                document.getElementById('loading-spinner').classList.add('hidden');
+            }
         }
 
         function renderGrid() {
-            const grid = document.getElementById('calendar-grid'); grid.innerHTML = '';
-            const today = new Date(); today.setHours(0,0,0,0);
+            const grid = document.getElementById('calendar-grid');
+            grid.innerHTML = '';
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            
             const filtered = allEvents.filter(e => {
                 if (currentView === 'today') return e.start_date.toDateString() === today.toDateString();
-                if (currentView === 'week') { const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7); return e.start_date >= today && e.start_date < nextWeek; }
+                if (currentView === 'week') {
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(today.getDate() + 7);
+                    return e.start_date >= today && e.start_date < nextWeek;
+                }
                 return e.start_date.getMonth() === today.getMonth();
             });
+
             FAMILY_MEMBERS.forEach((member, idx) => {
                 const mEvents = filtered.filter(e => e.assignedTo.includes(member));
-                const col = document.createElement('div'); col.className = 'flex flex-col gap-5';
+                const col = document.createElement('div');
+                col.className = 'flex flex-col gap-5';
                 let eventsHtml = mEvents.map(e => `
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:border-indigo-100 transition-all cursor-default">
-                        <p class="text-[9px] font-bold text-indigo-500 uppercase mb-1">${e.calendarName}</p>
-                        <p class="text-sm font-bold text-slate-800 mb-1.5 leading-tight">${e.summary || 'No Title'}</p>
-                        <p class="text-[11px] text-slate-400 font-medium">${e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all cursor-default group">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">${e.calendarName}</span>
+                            <div class="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-indigo-300"></div>
+                        </div>
+                        <p class="text-sm font-bold text-slate-800 mb-1.5 leading-tight">${e.summary || 'Untitled Event'}</p>
+                        <div class="flex items-center gap-1.5 text-slate-400">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                             <p class="text-[11px] font-semibold">${e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
                     </div>
                 `).join('');
-                if (mEvents.length === 0) eventsHtml = `<div class="py-12 px-4 rounded-[2rem] border-2 border-dashed border-slate-100 flex flex-col items-center justify-center opacity-40 text-center"><p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Clear</p></div>`;
-                col.innerHTML = `<div class="flex items-center justify-between px-2"><div class="flex items-center gap-2.5"><div class="w-2.5 h-2.5 rounded-full bg-indigo-${400 + (idx * 100)}"></div><h3 class="font-bold text-slate-800 text-lg">${member}</h3></div><span class="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">${mEvents.length}</span></div><div class="space-y-4">${eventsHtml}</div>`;
+                if (mEvents.length === 0) {
+                    eventsHtml = `<div class="py-12 px-4 rounded-[2rem] border-2 border-dashed border-slate-100 flex flex-col items-center justify-center opacity-40 text-center"><p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Clear</p></div>`;
+                }
+                col.innerHTML = `<div class="flex items-center justify-between px-2"><div class="flex items-center gap-2.5"><div class="w-2.5 h-2.5 rounded-full bg-indigo-${400 + (idx * 100)} shadow-sm"></div><h3 class="font-bold text-slate-800 text-lg">${member}</h3></div><span class="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">${mEvents.length}</span></div><div class="space-y-4">${eventsHtml}</div>`;
                 grid.appendChild(col);
             });
         }
 
-        function showDashboard() { document.getElementById('login-prompt').classList.add('hidden'); document.getElementById('calendar-grid').classList.remove('hidden'); document.getElementById('auth-btn').innerText = 'Sign Out'; document.getElementById('auth-btn').className = "w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold bg-slate-100 text-slate-500 hover:bg-slate-200"; }
-        function showLogin() { document.getElementById('login-prompt').classList.remove('hidden'); document.getElementById('calendar-grid').classList.add('hidden'); document.getElementById('auth-btn').innerText = 'Connect Google'; document.getElementById('auth-btn').className = "w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-100"; }
+        function showDashboard() {
+            document.getElementById('login-prompt').classList.add('hidden');
+            document.getElementById('calendar-grid').classList.remove('hidden');
+            document.getElementById('auth-btn').innerText = 'Sign Out';
+            document.getElementById('auth-btn').className = "w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold transition-all bg-slate-100 text-slate-500 hover:bg-slate-200";
+        }
 
-        function handleAuthAction() { if (accessToken) { accessToken = null; allEvents = []; showLogin(); } else { logDebug("Opening Google Sign-In..."); tokenClient.requestAccessToken(); } }
+        function showLogin() {
+            document.getElementById('login-prompt').classList.remove('hidden');
+            document.getElementById('calendar-grid').classList.add('hidden');
+            document.getElementById('auth-btn').innerText = 'Connect Google';
+            document.getElementById('auth-btn').className = "w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold transition-all bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700";
+        }
+
+        function handleAuthAction() {
+            if (accessToken) {
+                accessToken = null;
+                allEvents = [];
+                showLogin();
+            } else {
+                logDebug("Constructing Direct OAuth Redirect...");
+                const currentUri = window.location.origin + window.location.pathname;
+                
+                // Construct the OAuth URL manually to bypass library stalls
+                const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+                    `client_id=${CLIENT_ID}&` +
+                    `redirect_uri=${encodeURIComponent(currentUri)}&` +
+                    `response_type=token&` +
+                    `scope=${encodeURIComponent(SCOPES)}&` +
+                    `prompt=select_account`;
+                
+                logDebug("Navigating to Google...");
+                window.location.assign(authUrl);
+            }
+        }
 
         window.onload = () => {
             document.getElementById('current-date-str').innerText = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            
             const avatarContainer = document.getElementById('member-avatars');
-            FAMILY_MEMBERS.forEach((m, i) => { avatarContainer.innerHTML += `<div title="${m}" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[11px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm ring-1 ring-slate-100 z-${50-(i*10)}">${m[0]}</div>`; });
-
-            fetch('https://api.open-meteo.com/v1/forecast?latitude=51.7836&longitude=-1.4883&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/London').then(res => res.json()).then(data => {
-                document.getElementById('weather-box').classList.remove('hidden');
-                document.getElementById('temp-display').innerText = `${Math.round(data.current.temperature_2m)}°C`;
-                document.getElementById('range-display').innerText = `H: ${Math.round(data.daily.temperature_2m_max[0])}° L: ${Math.round(data.daily.temperature_2m_min[0])}°`;
+            FAMILY_MEMBERS.forEach((m, i) => {
+                avatarContainer.innerHTML += `<div title="${m}" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[11px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm ring-1 ring-slate-100 hover:scale-110 transition-transform cursor-default z-${50-(i*10)}">${m[0]}</div>`;
             });
+
+            fetch('https://api.open-meteo.com/v1/forecast?latitude=51.7836&longitude=-1.4883&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/London')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('weather-box').classList.remove('hidden');
+                    document.getElementById('temp-display').innerText = `${Math.round(data.current.temperature_2m)}°C`;
+                    document.getElementById('range-display').innerText = `H: ${Math.round(data.daily.temperature_2m_max[0])}° L: ${Math.round(data.daily.temperature_2m_min[0])}°`;
+                });
 
             // Traffic Logic
             const h = new Date().getHours();
@@ -204,25 +307,24 @@
             else if (h >= 15 && h <= 17) { d = 32; s = 'Heavy traffic'; c = 'text-rose-500'; }
             document.getElementById('traffic-time').innerText = `${d} mins`;
             document.getElementById('traffic-status').innerText = s;
-            document.getElementById('traffic-status').classList.add(c);
+            document.getElementById('traffic-status').className = `text-[10px] font-bold uppercase tracking-tight mt-1 ${c}`;
 
-            // Google Library
-            const gisScript = document.createElement('script');
-            gisScript.src = "https://accounts.google.com/gsi/client";
-            gisScript.onload = () => {
-                logDebug("Identity System Ready.");
-                const uri = window.location.origin + window.location.pathname;
-                logDebug(`Current URI for Cloud Console: ${uri}`);
-                tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: CLIENT_ID, scope: SCOPES, ux_mode: 'redirect', redirect_uri: uri
-                });
-                if (window.location.hash.includes('access_token')) {
-                    const t = new URLSearchParams(window.location.hash.substring(1)).get('access_token');
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    fetchEvents(t);
-                }
-            };
-            document.body.appendChild(gisScript);
+            // Handle return from OAuth redirect immediately
+            const hash = window.location.hash;
+            if (hash.includes('access_token')) {
+                logDebug("OAuth Token detected in URL. Finalizing session...");
+                const params = new URLSearchParams(hash.substring(1));
+                const token = params.get('access_token');
+                
+                // Clear the hash for a clean URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                fetchEvents(token);
+            } else {
+                logDebug("System Ready. Click 'Connect Google' to begin.");
+                const currentUri = window.location.origin + window.location.pathname;
+                logDebug(`Whitelist this URI: ${currentUri}`);
+            }
         };
     </script>
 </body>
