@@ -358,30 +358,46 @@
 
         // Load Google Identity Services
         function gisLoaded() {
-            tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: (response) => {
-                    if (response.error !== undefined) {
-                        console.error('Auth error:', response);
-                        return;
-                    }
-                    showMainContent();
-                    loadAllData();
-                },
-            });
-            gisInited = true;
-            maybeEnableButtons();
+            console.log('GIS loaded, google object:', window.google);
+            if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+                tokenClient = window.google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    callback: (response) => {
+                        if (response.error !== undefined) {
+                            console.error('Auth error:', response);
+                            return;
+                        }
+                        console.log('Auth successful');
+                        showMainContent();
+                        loadAllData();
+                    },
+                });
+                gisInited = true;
+                console.log('TokenClient created:', tokenClient);
+                maybeEnableButtons();
+            } else {
+                console.error('Google Identity Services not available');
+                setTimeout(gisLoaded, 100); // Retry
+            }
         }
 
         function maybeEnableButtons() {
+            console.log('Checking if ready - gapi:', gapiInited, 'gis:', gisInited);
             if (gapiInited && gisInited) {
                 document.getElementById('authorizeButton').disabled = false;
+                console.log('Authorize button enabled');
             }
         }
 
         // Handle authorization
         function handleAuthClick() {
+            console.log('Auth clicked, tokenClient:', tokenClient);
+            if (!tokenClient) {
+                console.error('TokenClient not initialized!');
+                alert('Authentication not ready. Please refresh the page.');
+                return;
+            }
             tokenClient.requestAccessToken({prompt: 'consent'});
         }
 
