@@ -1,712 +1,237 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Family Dashboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+  Calendar as CalendarIcon, Clock, Plus, Users, LayoutDashboard,
+  Bell, CheckCircle2, MoreVertical, LogIn, LogOut, RefreshCw,
+  CloudSun, Car, AlertTriangle, ShieldCheck, Terminal, Copy, Check
+} from 'lucide-react';
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            padding: 20px;
-            min-height: 100vh;
-        }
+// --- Configuration ---
+const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
+const API_KEY = ''; // Optional: Add your API Key here if discovery docs fail to load
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
 
-        .dashboard {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+const CALENDAR_IDS = [
+  'jonathan.bound@gmail.com',
+  'family07456545553640322749@group.calendar.google.com'
+];
 
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
+const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
+const NAME_VARIATIONS = {
+  'Jonathan': ['jonathan', 'jon'],
+  'Alex': ['alex', 'alexandra'],
+  'Rufus': ['rufus'],
+  'Madeline': ['madeline', 'maddie', 'maddy'],
+  'Theo': ['theo', 'theodore']
+};
 
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
+const App = () => {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [view, setView] = useState('today');
+  const [allEvents, setAllEvents] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [tokenClient, setTokenClient] = useState(null);
+  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
 
-        .current-time {
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
+  // --- Smart Logic ---
+  const categorizeEvent = (event) => {
+    const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
+    const assigned = FAMILY_MEMBERS.filter(member => 
+      (NAME_VARIATIONS[member] || [member.toLowerCase()]).some(v => text.includes(v))
+    );
+    return assigned.length === 0 ? FAMILY_MEMBERS : assigned;
+  };
 
-        .auth-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            text-align: center;
-        }
+  const fetchEvents = useCallback(async (token) => {
+    if (!window.gapi?.client?.calendar) return;
+    setLoading(true);
+    setError(null);
+    try {
+      if (token) window.gapi.client.setToken({ access_token: token });
+      
+      const now = new Date();
+      now.setHours(0,0,0,0);
+      const timeMin = now.toISOString();
+      const timeMax = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)).toISOString();
 
-        .auth-section h2 {
-            color: #667eea;
-            margin-bottom: 15px;
-        }
+      let fetched = [];
+      for (const id of CALENDAR_IDS) {
+        const resp = await window.gapi.client.calendar.events.list({
+          calendarId: id,
+          timeMin, timeMax,
+          showDeleted: false,
+          singleEvents: true,
+          orderBy: 'startTime',
+        });
+        const items = (resp.result.items || []).map(item => ({
+          ...item,
+          assignedTo: categorizeEvent(item),
+          calendarName: id.includes('family') ? 'Family' : 'Personal',
+          start_date: new Date(item.start.dateTime || item.start.date)
+        }));
+        fetched = [...fetched, ...items];
+      }
+      setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch events. You may need to sign in again.");
+      setUser(null);
+    } finally { setLoading(false); }
+  }, []);
 
-        .auth-section p {
-            margin-bottom: 20px;
-            color: #666;
-        }
-
-        .top-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .card h2 {
-            margin-bottom: 15px;
-            color: #667eea;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-
-        .weather-info {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .weather-temp {
-            font-size: 3em;
-            font-weight: bold;
-            color: #667eea;
-        }
-
-        .weather-details {
-            flex: 1;
-        }
-
-        .weather-details p {
-            margin: 5px 0;
-            font-size: 1.1em;
-        }
-
-        .traffic-info {
-            font-size: 1.1em;
-        }
-
-        .traffic-route {
-            background: #f0f0f0;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-        }
-
-        .traffic-time {
-            font-size: 1.5em;
-            font-weight: bold;
-            color: #28a745;
-            margin: 10px 0;
-        }
-
-        .traffic-time.moderate {
-            color: #ffc107;
-        }
-
-        .traffic-time.heavy {
-            color: #dc3545;
-        }
-
-        .calendar-controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: all 0.3s;
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-        }
-
-        .btn-primary.active {
-            background: #764ba2;
-        }
-
-        .btn-success {
-            background: #28a745;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #218838;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
-        }
-
-        .calendar-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-        }
-
-        .person-calendar {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .person-header {
-            font-size: 1.3em;
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 3px solid;
-        }
-
-        .person-1 .person-header { border-color: #667eea; color: #667eea; }
-        .person-2 .person-header { border-color: #28a745; color: #28a745; }
-        .person-3 .person-header { border-color: #ffc107; color: #ffc107; }
-        .person-4 .person-header { border-color: #dc3545; color: #dc3545; }
-        .person-5 .person-header { border-color: #17a2b8; color: #17a2b8; }
-
-        .event {
-            background: #f8f9fa;
-            padding: 12px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border-left: 4px solid;
-        }
-
-        .person-1 .event { border-color: #667eea; }
-        .person-2 .event { border-color: #28a745; }
-        .person-3 .event { border-color: #ffc107; }
-        .person-4 .event { border-color: #dc3545; }
-        .person-5 .event { border-color: #17a2b8; }
-
-        .event-time {
-            font-weight: bold;
-            color: #666;
-            font-size: 0.9em;
-        }
-
-        .event-title {
-            margin-top: 5px;
-            font-size: 1.1em;
-        }
-
-        .event-source {
-            margin-top: 5px;
-            font-size: 0.8em;
-            color: #999;
-            font-style: italic;
-        }
-
-        .no-events {
-            color: #999;
-            font-style: italic;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 0.9em;
-            margin-left: 10px;
-        }
-
-        .status-connected {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-disconnected {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        @media (max-width: 768px) {
-            .top-section {
-                grid-template-columns: 1fr;
+  // --- Google Initialization & Hash Parsing ---
+  useEffect(() => {
+    const init = () => {
+      // 1. GAPI Client Init
+      const gapiScript = document.createElement('script');
+      gapiScript.src = "https://apis.google.com/js/api.js";
+      gapiScript.onload = () => {
+        window.gapi.load('client', async () => {
+          await window.gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY_DOC] });
+          
+          // 2. Check URL for token after redirect
+          const hash = window.location.hash;
+          if (hash.includes('access_token')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const token = params.get('access_token');
+            if (token) {
+              setUser({ token });
+              fetchEvents(token);
+              // Clean up URL without refreshing
+              window.history.replaceState({}, document.title, window.location.pathname);
             }
-            
-            .calendar-section {
-                grid-template-columns: 1fr;
-            }
+          }
+        });
+      };
+      document.body.appendChild(gapiScript);
 
-            .header h1 {
-                font-size: 1.8em;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard">
-        <div class="header">
-            <h1>🏠 Family Dashboard</h1>
-            <div class="current-time" id="currentTime"></div>
+      // 3. GIS Identity Init (Redirect Mode)
+      const gisScript = document.createElement('script');
+      gisScript.src = "https://accounts.google.com/gsi/client";
+      gisScript.onload = () => {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          ux_mode: 'redirect',
+          redirect_uri: window.location.origin + window.location.pathname,
+        });
+        setTokenClient(client);
+      };
+      document.body.appendChild(gisScript);
+    };
+    init();
+  }, [fetchEvents]);
+
+  // Weather Logic
+  useEffect(() => {
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=51.7836&longitude=-1.4883&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/London')
+      .then(res => res.json())
+      .then(data => setWeather({ temp: Math.round(data.current.temperature_2m), high: Math.round(data.daily.temperature_2m_max[0]), low: Math.round(data.daily.temperature_2m_min[0]) }))
+      .catch(() => {});
+  }, []);
+
+  const filteredEvents = useMemo(() => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return allEvents.filter(e => {
+      if (view === 'today') return e.start_date.toDateString() === today.toDateString();
+      if (view === 'week') {
+        const nextWeek = new Date(today);
+        nextWeek.setDate(today.getDate() + 7);
+        return e.start_date >= today && e.start_date < nextWeek;
+      }
+      return e.start_date.getMonth() === currentDate.getMonth();
+    });
+  }, [allEvents, view, currentDate]);
+
+  return (
+    <div className="flex h-screen bg-slate-100 text-slate-900 overflow-hidden font-sans">
+      <aside className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col hidden md:flex">
+        <div className="flex items-center gap-2 mb-8">
+          <div className="p-2 bg-indigo-600 rounded-lg text-white shadow-lg shadow-indigo-100"><LayoutDashboard size={20} /></div>
+          <h1 className="text-xl font-bold">FamilyHub</h1>
         </div>
 
-        <div class="auth-section" id="authSection">
-            <h2>📅 Connect Your Google Calendars</h2>
-            <p>Click the button below to sign in with Google and authorize access to your calendars.</p>
-            <button class="btn btn-success" onclick="handleAuthClick()" id="authorizeButton">Sign In with Google</button>
-        </div>
+        <nav className="space-y-1 flex-grow">
+          {['Today', 'Week', 'Month'].map(v => (
+            <button key={v} onClick={() => setView(v.toLowerCase())} className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all font-medium ${view === v.toLowerCase() ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <CalendarIcon size={18} /> {v}
+            </button>
+          ))}
+        </nav>
 
-        <div id="mainContent" style="display: none;">
-            <div class="top-section">
-                <div class="card">
-                    <h2>🌤️ Weather - West Oxfordshire</h2>
-                    <div id="weatherInfo" class="loading">Loading weather...</div>
-                </div>
-
-                <div class="card">
-                    <h2>🚗 School Run Traffic</h2>
-                    <div id="trafficInfo" class="loading">Loading traffic...</div>
-                </div>
+        <div className="mt-auto space-y-4">
+          {weather && (
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weather</div>
+              <div className="text-xl font-bold">{weather.temp}°C</div>
+              <div className="text-[10px] text-slate-500">H: {weather.high}° L: {weather.low}°</div>
             </div>
-
-            <div class="card">
-                <h2>📅 Family Calendar
-                    <span class="status-badge status-connected" id="calendarStatus">Connected</span>
-                </h2>
-                <div class="calendar-controls">
-                    <button class="btn btn-primary active" onclick="changeView('today')">Today</button>
-                    <button class="btn btn-primary" onclick="changeView('week')">This Week</button>
-                    <button class="btn btn-primary" onclick="changeView('month')">This Month</button>
-                    <button class="btn btn-primary" onclick="refreshCalendar()">🔄 Refresh</button>
-                    <button class="btn btn-danger" onclick="handleSignoutClick()" style="margin-left: auto;">Sign Out</button>
-                </div>
-                <div class="calendar-section" id="calendarSection">
-                    <div class="loading">Loading calendars...</div>
-                </div>
-            </div>
+          )}
+          <button 
+            onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
+            className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-bold transition-all ${user ? 'bg-slate-100 text-slate-600' : 'bg-indigo-600 text-white'}`}
+          >
+            {user ? <LogOut size={16}/> : <LogIn size={16}/>} {user ? 'Sign Out' : 'Connect Google'}
+          </button>
         </div>
-    </div>
+      </aside>
 
-    <script>
-        // Configuration
-        const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
-        const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
-        const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
+      <main className="flex-grow flex flex-col">
+        <header className="bg-white border-b border-slate-200 p-6 flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-slate-800 capitalize">{view}'s Schedule</h2>
+          <div className="flex items-center gap-2">
+            {loading && <RefreshCw size={16} className="text-indigo-600 animate-spin mr-2" />}
+            <div className="flex -space-x-2">
+              {FAMILY_MEMBERS.map((m, i) => (
+                <div key={m} title={m} className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm`}>{m[0]}</div>
+              ))}
+            </div>
+          </div>
+        </header>
 
-        // Your calendar IDs
-        const CALENDAR_IDS = [
-            'jonathan.bound@gmail.com',
-            'family07456545553640322749@group.calendar.google.com'
-        ];
+        <section className="flex-grow p-8 overflow-y-auto">
+          {error && <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-700 text-sm">{error}</div>}
 
-        // Family member names for smart categorization
-        const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
-        
-        // Name variations for smart matching
-        const NAME_VARIATIONS = {
-            'Jonathan': ['jonathan', 'jon'],
-            'Alex': ['alex', 'alexandra'],
-            'Rufus': ['rufus'],
-            'Madeline': ['madeline', 'maddie', 'maddy'],
-            'Theo': ['theo', 'theodore']
-        };
-
-        let tokenClient;
-        let gapiInited = false;
-        let gisInited = false;
-        let currentView = 'today';
-        let allEvents = [];
-
-        // Load gapi and initialize
-        function gapiLoaded() {
-            window.gapi.load('client', async () => {
-                await window.gapi.client.init({
-                    discoveryDocs: [DISCOVERY_DOC],
-                });
-                gapiInited = true;
-                maybeEnableButtons();
-            });
-        }
-
-        // Load Google Identity Services
-        function gisLoaded() {
-            console.log('GIS loaded, google object:', window.google);
-            if (window.google && window.google.accounts && window.google.accounts.oauth2) {
-                tokenClient = window.google.accounts.oauth2.initTokenClient({
-                    client_id: CLIENT_ID,
-                    scope: SCOPES,
-                    ux_mode: 'redirect',
-                    redirect_uri: window.location.origin + window.location.pathname,
-                    callback: '', // Not used in redirect mode
-                });
-                gisInited = true;
-                console.log('TokenClient created:', tokenClient);
-                maybeEnableButtons();
-                
-                // Check if we're returning from OAuth
-                checkForAuthResponse();
-            } else {
-                console.error('Google Identity Services not available');
-                setTimeout(gisLoaded, 100); // Retry
-            }
-        }
-
-        // Check if we have an auth response in the URL
-        function checkForAuthResponse() {
-            const hash = window.location.hash;
-            if (hash.includes('access_token')) {
-                const params = new URLSearchParams(hash.substring(1));
-                const accessToken = params.get('access_token');
-                if (accessToken) {
-                    window.gapi.client.setToken({ access_token: accessToken });
-                    // Clean up URL
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    showMainContent();
-                    loadAllData();
-                }
-            }
-        }
-
-        function maybeEnableButtons() {
-            console.log('Checking if ready - gapi:', gapiInited, 'gis:', gisInited);
-            if (gapiInited && gisInited) {
-                document.getElementById('authorizeButton').disabled = false;
-                console.log('Authorize button enabled');
-            }
-        }
-
-        // Handle authorization
-        function handleAuthClick() {
-            console.log('Auth clicked, tokenClient:', tokenClient);
-            if (!tokenClient) {
-                console.error('TokenClient not initialized!');
-                alert('Authentication not ready. Please refresh the page.');
-                return;
-            }
-            tokenClient.requestAccessToken({prompt: 'consent'});
-        }
-
-        // Handle sign out
-        function handleSignoutClick() {
-            const token = window.gapi.client.getToken();
-            if (token !== null) {
-                window.google.accounts.oauth2.revoke(token.access_token);
-                window.gapi.client.setToken('');
-            }
-            showAuthSection();
-        }
-
-        function showMainContent() {
-            document.getElementById('authSection').style.display = 'none';
-            document.getElementById('mainContent').style.display = 'block';
-        }
-
-        function showAuthSection() {
-            document.getElementById('authSection').style.display = 'block';
-            document.getElementById('mainContent').style.display = 'none';
-        }
-
-        // Fetch calendar events
-        async function fetchCalendarEvents() {
-            const now = new Date();
-            const timeMin = now.toISOString();
-            const timeMax = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000)).toISOString();
-            
-            allEvents = [];
-            
-            for (const calendarId of CALENDAR_IDS) {
-                try {
-                    const response = await window.gapi.client.calendar.events.list({
-                        'calendarId': calendarId,
-                        'timeMin': timeMin,
-                        'timeMax': timeMax,
-                        'showDeleted': false,
-                        'singleEvents': true,
-                        'orderBy': 'startTime'
-                    });
-                    
-                    const events = response.result.items;
-                    if (events && events.length > 0) {
-                        events.forEach(event => {
-                            allEvents.push({
-                                ...event,
-                                calendarId: calendarId
-                            });
-                        });
-                    }
-                } catch (err) {
-                    console.error('Error fetching calendar:', calendarId, err);
-                }
-            }
-            
-            displayCalendar(currentView);
-        }
-
-        // Smart categorization
-        function categorizeEvent(event) {
-            const title = event.summary || '';
-            const description = event.description || '';
-            const text = (title + ' ' + description).toLowerCase();
-            
-            const assignedMembers = [];
-            
-            // Check if any family member names or variations appear in the event
-            FAMILY_MEMBERS.forEach(member => {
-                const variations = NAME_VARIATIONS[member] || [member.toLowerCase()];
-                const matchFound = variations.some(variation => text.includes(variation));
-                
-                if (matchFound) {
-                    assignedMembers.push(member);
-                }
-            });
-            
-            // If no specific members found, assign to everyone (true family events)
-            if (assignedMembers.length === 0) {
-                return FAMILY_MEMBERS;
-            }
-            
-            return assignedMembers;
-        }
-
-        // Filter events based on view
-        function filterEvents(events, view) {
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            
-            return events.filter(event => {
-                const startTime = event.start.dateTime || event.start.date;
-                const eventDate = new Date(startTime);
-                
-                if (view === 'today') {
-                    return eventDate.toDateString() === today.toDateString();
-                } else if (view === 'week') {
-                    const weekFromNow = new Date(today);
-                    weekFromNow.setDate(weekFromNow.getDate() + 7);
-                    return eventDate >= today && eventDate < weekFromNow;
-                } else if (view === 'month') {
-                    const monthFromNow = new Date(today);
-                    monthFromNow.setMonth(monthFromNow.getMonth() + 1);
-                    return eventDate >= today && eventDate < monthFromNow;
-                }
-            });
-        }
-
-        // Display calendar
-        function displayCalendar(view) {
-            const calendarSection = document.getElementById('calendarSection');
-            const filteredEvents = filterEvents(allEvents, view);
-            
-            const personEvents = {};
-            FAMILY_MEMBERS.forEach(member => {
-                personEvents[member] = [];
-            });
-            
-            filteredEvents.forEach(event => {
-                const assignedTo = categorizeEvent(event);
-                assignedTo.forEach(member => {
-                    personEvents[member].push(event);
-                });
-            });
-            
-            let html = '';
-            
-            FAMILY_MEMBERS.forEach((person, index) => {
-                const events = personEvents[person];
-                
-                html += `
-                    <div class="person-calendar person-${index + 1}">
-                        <div class="person-header">${person}</div>
-                `;
-                
-                if (events.length === 0) {
-                    html += `<div class="no-events">No events ${view === 'today' ? 'today' : 'in this period'}</div>`;
-                } else {
-                    events.sort((a, b) => {
-                        const aTime = new Date(a.start.dateTime || a.start.date);
-                        const bTime = new Date(b.start.dateTime || b.start.date);
-                        return aTime - bTime;
-                    });
-                    
-                    events.forEach(event => {
-                        const startTime = event.start.dateTime || event.start.date;
-                        const eventDate = new Date(startTime);
-                        
-                        let timeStr = '';
-                        let dateStr = '';
-                        
-                        if (event.start.dateTime) {
-                            timeStr = eventDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                            dateStr = eventDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-                        } else {
-                            timeStr = 'All day';
-                            dateStr = eventDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-                        }
-                        
-                        const displayTime = view === 'today' ? timeStr : dateStr + ' ' + timeStr;
-                        const calendarName = event.calendarId.includes('family') ? 'Family Calendar' : 'Personal';
-                        
-                        html += `
-                            <div class="event">
-                                <div class="event-time">${displayTime}</div>
-                                <div class="event-title">${event.summary || 'Untitled Event'}</div>
-                                <div class="event-source">${calendarName}</div>
-                            </div>
-                        `;
-                    });
-                }
-                
-                html += `</div>`;
-            });
-            
-            calendarSection.innerHTML = html;
-        }
-
-        // Change view
-        function changeView(view) {
-            currentView = view;
-            
-            document.querySelectorAll('.calendar-controls .btn-primary').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-            
-            displayCalendar(view);
-        }
-
-        // Refresh calendar
-        function refreshCalendar() {
-            document.getElementById('calendarSection').innerHTML = '<div class="loading">Refreshing calendars...</div>';
-            fetchCalendarEvents();
-        }
-
-        // Update time
-        function updateTime() {
-            const now = new Date();
-            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-            document.getElementById('currentTime').textContent = now.toLocaleDateString('en-GB', options);
-        }
-
-        // Fetch weather
-        async function fetchWeather() {
-            try {
-                const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=51.7836&longitude=-1.4883&current=temperature_2m,weathercode,windspeed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Europe/London');
-                const data = await response.json();
-                
-                const temp = Math.round(data.current.temperature_2m);
-                const weatherCode = data.current.weathercode;
-                const windSpeed = Math.round(data.current.windspeed_10m);
-                const maxTemp = Math.round(data.daily.temperature_2m_max[0]);
-                const minTemp = Math.round(data.daily.temperature_2m_min[0]);
-                const precipitation = data.daily.precipitation_sum[0];
-                
-                const weatherDescriptions = {
-                    0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
-                    45: 'Foggy', 48: 'Foggy', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
-                    61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow'
-                };
-                
-                const weatherDesc = weatherDescriptions[weatherCode] || 'Unknown';
-                
-                document.getElementById('weatherInfo').innerHTML = `
-                    <div class="weather-info">
-                        <div class="weather-temp">${temp}°C</div>
-                        <div class="weather-details">
-                            <p><strong>${weatherDesc}</strong></p>
-                            <p>High: ${maxTemp}°C / Low: ${minTemp}°C</p>
-                            <p>Wind: ${windSpeed} km/h</p>
-                            <p>Precipitation: ${precipitation} mm</p>
+          {!user ? (
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-indigo-50"><CalendarIcon size={36}/></div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Sync Connection Required</h3>
+              <p className="text-slate-500 mb-8 text-sm">Sign in to sync your family and personal Google calendars into this dashboard.</p>
+              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">Authorize Google Access</button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+              {FAMILY_MEMBERS.map((member, idx) => {
+                const memberEvents = filteredEvents.filter(e => e.assignedTo.includes(member));
+                return (
+                  <div key={member} className="flex flex-col gap-4">
+                    <h3 className="font-bold text-slate-800 flex items-center justify-between px-1">
+                      <span className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full bg-indigo-${400+(idx*100)}`} />{member}</span>
+                      <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">{memberEvents.length}</span>
+                    </h3>
+                    <div className="space-y-3">
+                      {memberEvents.map(e => (
+                        <div key={e.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-200 transition-all">
+                          <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest mb-1">{e.calendarName}</p>
+                          <p className="text-sm font-bold text-slate-800 mb-1">{e.summary}</p>
+                          <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1"><Clock size={10}/> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
+                      ))}
+                      {memberEvents.length === 0 && <div className="h-24 rounded-2xl border-2 border-dashed border-slate-100 flex items-center justify-center opacity-30 text-[9px] font-bold uppercase tracking-tighter">No events</div>}
                     </div>
-                `;
-            } catch (error) {
-                document.getElementById('weatherInfo').innerHTML = '<p>Unable to load weather data</p>';
-            }
-        }
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+};
 
-        // Load traffic
-        function loadTraffic() {
-            const currentHour = new Date().getHours();
-            let duration = 15;
-            let status = '';
-            
-            if (currentHour >= 7 && currentHour <= 9) {
-                duration = 25;
-                status = 'moderate';
-            } else if (currentHour >= 16 && currentHour <= 18) {
-                duration = 28;
-                status = 'heavy';
-            }
-            
-            document.getElementById('trafficInfo').innerHTML = `
-                <div class="traffic-route">
-                    <p><strong>Home → School</strong></p>
-                    <p>Distance: ~8 km</p>
-                </div>
-                <div class="traffic-time ${status}">
-                    ${duration} minutes
-                </div>
-                <p>${status === 'heavy' ? '🔴 Heavy traffic' : status === 'moderate' ? '🟡 Moderate traffic' : '🟢 Clear roads'}</p>
-                <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
-                    <em>Note: This is mock data. Real traffic requires Google Maps API setup.</em>
-                </p>
-            `;
-        }
-
-        // Load all data
-        function loadAllData() {
-            updateTime();
-            fetchWeather();
-            loadTraffic();
-            fetchCalendarEvents();
-            
-            setInterval(updateTime, 60000);
-            setInterval(fetchWeather, 600000);
-            setInterval(loadTraffic, 300000);
-            setInterval(fetchCalendarEvents, 300000);
-        }
-
-        // Initialize
-        updateTime();
-        setInterval(updateTime, 60000);
-    </script>
-    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
-</body>
-</html>
+export default App;
