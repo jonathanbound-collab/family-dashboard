@@ -23,11 +23,14 @@
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
         
+        /* Map container styling - ensuring full color and specific height */
         .map-container iframe {
             width: 100%;
             height: 100%;
             border: 0;
             border-radius: 1.5rem;
+            filter: none !important; /* Force no grayscale */
+            opacity: 1 !important;   /* Force full opacity */
         }
     </style>
 </head>
@@ -35,7 +38,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useMemo, useRef } = React;
+        const { useState, useEffect, useCallback, useMemo } = React;
         
         // --- Configuration ---
         const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
@@ -57,30 +60,39 @@
         };
 
         /**
-         * Robust Icon Component using Lucide core createIcons method.
-         * This avoids the "toSvg is not a function" error by letting Lucide handle the DOM directly.
+         * Ultra-Resilient Icon Component
+         * Manually parses Lucide icon data to avoid destructuring and mapping errors
+         * caused by version differences or browser script optimization.
          */
         const Icon = ({ name, size = 20, className = "", strokeWidth = 2 }) => {
-            const iconRef = useRef(null);
+            const iconData = window.lucide?.icons?.[name];
+            if (!iconData) return <div style={{ width: size, height: size }} className={className} />;
 
-            useEffect(() => {
-                if (iconRef.current && window.lucide) {
-                    // Lucide core expects kebab-case names in data-lucide attribute
-                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                    iconRef.current.setAttribute('data-lucide', kebabName);
-                    
-                    window.lucide.createIcons({
-                        attrs: {
-                            width: size,
-                            height: size,
-                            'stroke-width': strokeWidth,
-                            class: className
-                        }
-                    });
-                }
-            }, [name, size, className, strokeWidth]);
+            // Lucide icons are typically [tagName, attributes, childrenArray]
+            const children = iconData[2];
+            if (!Array.isArray(children)) return null;
 
-            return <i ref={iconRef} className={`inline-block ${className}`} style={{ width: size, height: size }}></i>;
+            return (
+                <svg
+                    width={size}
+                    height={size}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={strokeWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={className}
+                >
+                    {children.map((child, idx) => {
+                        // Handle both Array [tag, attrs] and Object {tag, attrs} formats for safety
+                        const tag = Array.isArray(child) ? child[0] : (child.tag || child.name);
+                        const attrs = Array.isArray(child) ? child[1] : (child.attrs || child.attributes);
+                        if (!tag) return null;
+                        return React.createElement(tag, { ...attrs, key: idx });
+                    })}
+                </svg>
+            );
         };
 
         const App = () => {
@@ -91,26 +103,34 @@
             const [tokenClient, setTokenClient] = useState(null);
             const [currentTime, setCurrentTime] = useState(new Date());
             
+            // Helpful for local testing
+            const [originError, setOriginError] = useState(window.location.protocol === 'file:');
+            
             const [tasks, setTasks] = useState(() => {
-                const saved = localStorage.getItem('family_tasks');
                 try {
+                    const saved = localStorage.getItem('family_tasks');
                     return saved ? JSON.parse(saved) : [
                         { id: 1, text: 'Renew school bus passes', completed: false },
                         { id: 2, text: 'Order logs for burner', completed: true }
                     ];
-                } catch (e) { return []; }
+                } catch (e) { 
+                    console.warn("Storage blocked by browser tracking prevention. Falling back to session memory.");
+                    return []; 
+                }
             });
             const [newTaskText, setNewTaskText] = useState('');
 
-            // Clock Update
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
                 return () => clearInterval(timer);
             }, []);
 
-            // Task Persistence
             useEffect(() => {
-                localStorage.setItem('family_tasks', JSON.stringify(tasks));
+                try {
+                    localStorage.setItem('family_tasks', JSON.stringify(tasks));
+                } catch (e) {
+                    // Fail silently if tracking prevention blocks writing
+                }
             }, [tasks]);
 
             const categorizeEvent = (event) => {
@@ -154,7 +174,6 @@
             }, []);
 
             useEffect(() => {
-                // Initialize Google Scripts
                 const script = document.createElement('script');
                 script.src = "https://apis.google.com/js/api.js";
                 script.onload = () => {
@@ -181,12 +200,11 @@
                 };
                 document.body.appendChild(gis);
 
-                // Fetch Weather
                 fetch('https://api.open-meteo.com/v1/forecast?latitude=51.67&longitude=-1.41&current=temperature_2m,weathercode&daily=precipitation_probability_max&timezone=Europe/London')
                     .then(r => r.json()).then(d => setWeather({ 
                         temp: Math.round(d.current.temperature_2m), 
                         rain: d.daily.precipitation_probability_max[0] 
-                    })).catch(err => console.error("Weather check failed"));
+                    })).catch(err => console.error("Weather unreachable"));
             }, [fetchEvents]); 
 
             const addTask = () => {
@@ -221,21 +239,40 @@
             }, [currentTime]);
 
             return (
-                <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left">
-                    {/* Sidebar */}
+                <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left relative">
+                    {/* Origin Security Alert */}
+                    {originError && (
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] bg-white border border-rose-100 p-4 rounded-3xl shadow-2xl max-w-xl animate-in fade-in slide-in-from-top-4 duration-500">
+                            <div className="flex gap-4">
+                                <div className="bg-rose-50 p-2 rounded-xl text-rose-500">
+                                    <Icon name="ShieldAlert" size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-black text-slate-800">Local Protocol Restriction</p>
+                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                        Google Calendar synchronization requires a secure web origin. 
+                                        To enable sync, please run this file through a <strong>local server</strong> (e.g. VS Code Live Server) 
+                                        instead of opening the <code>.html</code> file directly.
+                                    </p>
+                                    <button onClick={() => setOriginError(false)} className="mt-3 text-[10px] uppercase font-black tracking-widest text-rose-600 hover:text-rose-700 transition-colors">Dismiss Alert</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col items-start hidden lg:flex shadow-sm z-20 overflow-y-auto hide-scroll">
-                        <div className="flex items-center gap-4 mb-8 w-full text-left">
-                            <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100 flex-shrink-0">
-                                <Icon name="LayoutDashboard" size={22} />
+                        <div className="flex items-center gap-4 mb-10 w-full text-left">
+                            <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-100 flex-shrink-0">
+                                <Icon name="LayoutDashboard" size={24} />
                             </div>
                             <div className="text-left">
-                                <h1 className="text-xl font-extrabold tracking-tight text-slate-800">FamilyHub</h1>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Southmoor</p>
+                                <h1 className="text-2xl font-black tracking-tight text-slate-800">FamilyHub</h1>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] leading-none">Control</p>
                             </div>
                         </div>
 
                         <div className="space-y-6 w-full">
-                            {/* Weather Card */}
+                            {/* Weather */}
                             {weather && (
                                 <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 flex items-center justify-between shadow-sm w-full">
                                     <div className="text-left">
@@ -247,31 +284,31 @@
                                             <Icon name="CloudRain" size={16} strokeWidth={3} />
                                             <span>{weather.rain}%</span>
                                         </div>
-                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Rain Chance</span>
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-right">Rain Chance</span>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Tasks Card */}
-                            <div className="p-5 bg-white rounded-[2rem] border border-slate-100 shadow-sm w-full text-left">
-                                <div className="flex items-center justify-between mb-4">
+                            {/* Shared Tasks */}
+                            <div className="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm w-full text-left">
+                                <div className="flex items-center justify-between mb-5">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shared To-Do</span>
-                                    <Icon name="CheckSquare" size={14} className="text-emerald-500" />
+                                    <Icon name="CheckSquare" size={16} className="text-emerald-500" />
                                 </div>
-                                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto hide-scroll text-left">
+                                <div className="space-y-3 mb-6 max-h-64 overflow-y-auto hide-scroll text-left">
                                     {tasks.map(task => (
-                                        <div key={task.id} className="flex items-center gap-3 group text-left">
+                                        <div key={task.id} className="flex items-center gap-4 group text-left">
                                             <button 
                                                 onClick={() => toggleTask(task.id)}
-                                                className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
+                                                className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-200 hover:border-emerald-400'}`}
                                             >
-                                                {task.completed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                                {task.completed && <Icon name="Check" size={12} strokeWidth={4} className="text-white" />}
                                             </button>
-                                            <span className={`text-xs flex-grow truncate text-left ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
+                                            <span className={`text-sm font-semibold flex-grow truncate text-left ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
                                                 {task.text}
                                             </span>
                                             <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all flex-shrink-0">
-                                                <Icon name="Trash2" size={12} />
+                                                <Icon name="Trash2" size={14} />
                                             </button>
                                         </div>
                                     ))}
@@ -282,22 +319,22 @@
                                         value={newTaskText}
                                         onChange={(e) => setNewTaskText(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && addTask()}
-                                        placeholder="Add task..."
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all text-left"
+                                        placeholder="Add family task..."
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all placeholder:text-slate-300"
                                     />
-                                    <button onClick={addTask} className="absolute right-2 top-1.5 text-indigo-500 hover:text-indigo-700">
-                                        <Icon name="PlusCircle" size={18} />
+                                    <button onClick={addTask} className="absolute right-3 top-2.5 text-indigo-500 hover:text-indigo-700">
+                                        <Icon name="PlusCircle" size={20} />
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Large School Run Map */}
+                            {/* Large Map */}
                             <div className="p-5 bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden w-full text-left">
                                 <div className="flex items-center justify-between mb-4 w-full text-left">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left text-left">School Run</span>
-                                    <Icon name="Navigation" size={14} className="text-indigo-500" />
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">School Run</span>
+                                    <Icon name="Navigation" size={16} className="text-indigo-500" />
                                 </div>
-                                <div className="h-96 rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-1 ring-slate-100 map-container">
+                                <div className="h-[450px] rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-1 ring-slate-100 map-container">
                                     <iframe 
                                         src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
                                         allowFullScreen 
@@ -308,33 +345,33 @@
 
                         <button 
                             onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
-                            className="mt-auto w-full flex items-center justify-center gap-3 p-4 rounded-2xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all text-left"
+                            className="mt-10 w-full flex items-center justify-center gap-3 p-5 rounded-3xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all text-left"
                         >
-                            {user ? <Icon name="LogOut" size={16}/> : <Icon name="LogIn" size={16}/>} 
-                            {user ? 'Sign Out' : 'Sync Google'}
+                            {user ? <Icon name="LogOut" size={18}/> : <Icon name="LogIn" size={18}/>} 
+                            {user ? 'Sign Out' : 'Sync Google Calendar'}
                         </button>
                     </aside>
 
-                    {/* Main Content */}
+                    {/* Main Workspace */}
                     <main className="flex-grow flex flex-col overflow-hidden bg-slate-50 text-left">
-                        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10 text-left">
+                        <header className="bg-white border-b border-slate-200 px-10 py-8 flex items-center justify-between shadow-sm z-10 text-left">
                             <div className="text-left">
-                                <h2 className="text-3xl font-black text-slate-800 tracking-tight text-left">{greeting}, Bounds</h2>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2 text-left">
-                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                                    Hub Control • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                                <h2 className="text-4xl font-black text-slate-800 tracking-tight text-left">{greeting}, Bounds</h2>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2 flex items-center gap-3 text-left">
+                                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                    Active Dashboard • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
                                 </p>
                             </div>
-                            <div className="flex items-center gap-8">
-                                <div className="text-right hidden md:block">
-                                    <div className="text-2xl font-black text-slate-800 tracking-tighter leading-none text-right">
+                            <div className="flex items-center gap-10">
+                                <div className="text-right hidden md:block text-left">
+                                    <div className="text-3xl font-black text-slate-800 tracking-tighter leading-none text-right">
                                         {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Local Time</div>
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 text-right">Local Time</div>
                                 </div>
-                                <div className="flex -space-x-2.5">
+                                <div className="flex -space-x-3">
                                     {FAMILY_MEMBERS.map((m, i) => (
-                                        <div key={m} title={m} className={`w-10 h-10 rounded-full border-4 border-white flex items-center justify-center text-[10px] font-black text-white shadow-md ring-1 ring-slate-100 bg-indigo-${400 + (i*100)} text-left`}>
+                                        <div key={m} title={m} className={`w-12 h-12 rounded-full border-[4px] border-white flex items-center justify-center text-[12px] font-black text-white shadow-xl ring-1 ring-slate-100 bg-indigo-${400 + (i*100)} text-left`}>
                                             {m[0]}
                                         </div>
                                     ))}
@@ -342,47 +379,47 @@
                             </div>
                         </header>
 
-                        <section className="flex-grow p-8 overflow-hidden flex flex-col gap-6 text-left">
+                        <section className="flex-grow p-10 overflow-hidden flex flex-col gap-8 text-left">
                             {!user ? (
-                                <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto text-left">
-                                    <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse mx-auto">
-                                        <Icon name="Calendar" size={40}/>
+                                <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto text-left">
+                                    <div className="w-28 h-28 bg-indigo-50 text-indigo-600 rounded-[3rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse mx-auto">
+                                        <Icon name="Calendar" size={48}/>
                                     </div>
-                                    <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight mx-auto text-center">Sync Calendars</h3>
-                                    <p className="text-slate-500 mb-10 text-sm font-medium leading-relaxed mx-auto text-center">Connect your Google account to view shared family schedules and school runs.</p>
-                                    <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95 mx-auto text-center">Authorize Access</button>
+                                    <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight mx-auto text-center">Sync Required</h3>
+                                    <p className="text-slate-500 mb-10 text-base font-medium leading-relaxed mx-auto text-center">Connect your family account to view shared schedules and events directly on this dashboard.</p>
+                                    <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold text-lg hover:bg-indigo-700 shadow-2xl shadow-indigo-100 transition-all active:scale-95 mx-auto text-center">Authorize Google Sync</button>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full overflow-hidden text-left">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-10 h-full overflow-hidden text-left">
                                     {Object.entries(scheduleColumns).map(([key, events]) => (
                                         <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow text-left">
-                                            <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between text-left">
-                                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-[11px] text-left">{key}</h3>
-                                                <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full shadow-lg shadow-indigo-100 text-center">{events.length}</span>
+                                            <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between text-left">
+                                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-[13px] text-left">{key}</h3>
+                                                <span className="text-[12px] font-black bg-indigo-600 text-white px-4 py-1.5 rounded-full shadow-lg shadow-indigo-100 text-center">{events.length}</span>
                                             </div>
-                                            <div className="flex-grow overflow-y-auto p-5 space-y-4 hide-scroll text-left">
+                                            <div className="flex-grow overflow-y-auto p-6 space-y-5 hide-scroll text-left">
                                                 {events.map(e => {
                                                     const person = e.assignedTo[0] || 'Family';
                                                     const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
                                                     return (
-                                                        <div key={e.id} className={`p-5 rounded-2xl border-l-[8px] shadow-sm transition-all hover:translate-x-1 text-left ${config.color}`}>
-                                                            <div className="flex items-center justify-between mb-3 text-left">
-                                                                <div className="flex items-center gap-1.5 font-bold text-[10px] opacity-70 uppercase tracking-tighter text-left">
-                                                                    <Icon name="Clock" size={12} strokeWidth={3} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        <div key={e.id} className={`p-6 rounded-[2rem] border-l-[10px] shadow-sm transition-all hover:translate-x-1 text-left ${config.color}`}>
+                                                            <div className="flex items-center justify-between mb-4 text-left">
+                                                                <div className="flex items-center gap-2 font-bold text-[11px] opacity-70 uppercase tracking-widest text-left">
+                                                                    <Icon name="Clock" size={14} strokeWidth={3} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                 </div>
-                                                                <span className="text-[8px] font-black uppercase opacity-40 text-right">{e.calendarName}</span>
+                                                                <span className="text-[9px] font-black uppercase opacity-40 text-right">{e.calendarName}</span>
                                                             </div>
-                                                            <p className="text-sm font-bold leading-tight mb-4 text-slate-800 text-left">{e.summary}</p>
-                                                            <div className="flex flex-wrap gap-1.5 text-left">
+                                                            <p className="text-base font-bold leading-snug mb-5 text-slate-800 text-left">{e.summary}</p>
+                                                            <div className="flex flex-wrap gap-2 text-left">
                                                                 {e.assignedTo.map(p => (
-                                                                    <span key={p} className={`px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'} text-center`}>{p}</span>
+                                                                    <span key={p} className={`px-3 py-1 rounded-full text-[10px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'} text-center`}>{p}</span>
                                                                 ))}
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
-                                                {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-black tracking-[0.4em] opacity-40 flex flex-col items-center gap-3 text-center">
-                                                    <Icon name="Map" size={32} />
+                                                {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[12px] font-black tracking-[0.5em] opacity-40 flex flex-col items-center gap-5 text-center">
+                                                    <Icon name="CalendarDays" size={48} />
                                                     No Events
                                                 </div>}
                                             </div>
