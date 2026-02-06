@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, Clock, LayoutDashboard,
   LogIn, LogOut, RefreshCw, Sun, Battery, Droplets, 
-  CloudRain, Navigation, AlertCircle
+  CloudRain, Navigation, AlertCircle, Zap
 } from 'lucide-react';
 
 // --- Configuration ---
@@ -44,9 +44,19 @@ const App = () => {
   const [mixergyToken, setMixergyToken] = useState(null);
   const [logs, setLogs] = useState([]);
 
-  const addLog = (msg, isError = false) => {
+  const addLog = useCallback((msg, isError = false) => {
     setLogs(prev => [`${new Date().toLocaleTimeString()} > ${msg}`, ...prev].slice(0, 15));
-  };
+  }, []);
+
+  // --- Style Injection ---
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .hide-scroll::-webkit-scrollbar { display: none; }
+      .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    `;
+    document.head.appendChild(style);
+  }, []);
 
   // --- Calendar Logic ---
   const categorizeEvent = (event) => {
@@ -85,18 +95,17 @@ const App = () => {
         } catch (e) { addLog(`Calendar ${id} restricted`, true); }
       }
       setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
-      addLog("Calendar synced.");
+      addLog("Calendar synchronized.");
     } catch (err) { addLog("Calendar sync failed", true); }
     finally { setLoading(false); }
-  }, []);
+  }, [addLog]);
 
   // --- Smart Home Integration ---
   const updateSmartHome = useCallback(async () => {
     addLog("Updating Energy Data...");
-    let solarResults = { solar: 0, battery: 0, live: false };
-    let waterResults = { water: 0, temp: 0, live: false };
+    let liveData = { ...smartHome, isLive: false };
 
-    // 1. SolarEdge Fetch (GET via AllOrigins)
+    // 1. SolarEdge
     try {
       const seUrl = `https://monitoringapi.solaredge.com/site/${SOLAREDGE_SITE_ID}/currentPowerFlow?api_key=${SOLAREDGE_API_KEY}`;
       const seResp = await fetch(`${GET_PROXY}${encodeURIComponent(seUrl)}`);
@@ -105,14 +114,17 @@ const App = () => {
       
       if (seData.siteCurrentPowerFlow) {
         const flow = seData.siteCurrentPowerFlow;
-        solarResults.solar = flow.PV?.currentPower || 0;
-        solarResults.battery = flow.STORAGE?.chargeLevel || 0;
-        solarResults.live = true;
-        addLog(`SolarEdge: ${solarResults.solar}kW Active`);
+        liveData.solar = flow.PV?.currentPower || 0;
+        // Check battery specifically
+        if (flow.STORAGE) {
+          liveData.battery = flow.STORAGE.chargeLevel || 0;
+        }
+        liveData.isLive = true;
+        addLog(`SolarEdge: ${liveData.solar}kW generation received.`);
       }
-    } catch (e) { addLog("SolarEdge: Network or API error", true); }
+    } catch (e) { addLog("SolarEdge connection failed", true); }
 
-    // 2. Mixergy Fetch (POST for Auth, GET for Data)
+    // 2. Mixergy
     try {
       let mToken = mixergyToken;
       if (!mToken) {
@@ -136,25 +148,19 @@ const App = () => {
         const tanks = JSON.parse(tankProxy.contents);
         
         if (tanks && tanks[0]) {
-          waterResults.water = Math.round(tanks[0].charge || 0);
-          waterResults.temp = Math.round(tanks[0].latest_measurement?.top_temperature || 0);
-          waterResults.live = true;
-          addLog(`Mixergy: ${waterResults.water}% Charge`);
+          liveData.water = Math.round(tanks[0].charge || 0);
+          liveData.waterTemp = Math.round(tanks[0].latest_measurement?.top_temperature || 0);
+          liveData.isLive = true;
+          addLog(`Mixergy: ${liveData.water}% hot water charge.`);
         }
       }
     } catch (e) { 
-      setMixergyToken(null); // Force re-login next cycle
-      addLog("Mixergy: Auth or Proxy error", true); 
+      setMixergyToken(null);
+      addLog("Mixergy auth or proxy error", true); 
     }
 
-    setSmartHome({
-      solar: solarResults.solar,
-      battery: solarResults.battery,
-      water: waterResults.water,
-      waterTemp: waterResults.temp,
-      isLive: solarResults.live || waterResults.live
-    });
-  }, [mixergyToken]);
+    setSmartHome(liveData);
+  }, [mixergyToken, smartHome, addLog]);
 
   // --- Initialization ---
   useEffect(() => {
@@ -186,62 +192,76 @@ const App = () => {
 
     // Weather
     fetch('https://api.open-meteo.com/v1/forecast?latitude=51.67&longitude=-1.41&current=temperature_2m,weathercode&daily=precipitation_probability_max&timezone=Europe/London')
-      .then(r => r.json()).then(d => setWeather({ temp: Math.round(d.current.temperature_2m), rain: d.daily.precipitation_probability_max[0] }));
+      .then(r => r.json()).then(d => setWeather({ 
+        temp: Math.round(d.current.temperature_2m), 
+        rain: d.daily.precipitation_probability_max[0] 
+      }));
     
     updateSmartHome();
     const interval = setInterval(updateSmartHome, 300000); 
     return () => clearInterval(interval);
-  }, [fetchEvents, updateSmartHome]);
+  }, []); // Run once on mount
 
   const scheduleColumns = useMemo(() => {
     const today = new Date(); today.setHours(0,0,0,0);
     const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
     return {
-      today: allEvents.filter(e => e.start_date.toDateString() === today.toDateString()),
-      week: allEvents.filter(e => e.start_date >= today && e.start_date < nextWeek),
-      month: allEvents.filter(e => e.start_date.getMonth() === today.getMonth())
+      'Today': allEvents.filter(e => e.start_date.toDateString() === today.toDateString()),
+      'This Week': allEvents.filter(e => e.start_date >= today && e.start_date < nextWeek),
+      'This Month': allEvents.filter(e => e.start_date.getMonth() === today.getMonth())
     };
   }, [allEvents]);
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col hidden lg:flex shadow-sm text-center">
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100"><LayoutDashboard size={20} /></div>
+      <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col hidden lg:flex shadow-sm">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100">
+            <LayoutDashboard size={20} />
+          </div>
           <h1 className="text-xl font-bold tracking-tight">FamilyHub</h1>
         </div>
 
-        <div className="flex-grow space-y-5 overflow-y-auto hide-scroll pb-4">
+        <div className="flex-grow space-y-6 overflow-y-auto hide-scroll pb-4">
           {/* Smart Home Card */}
           <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Smart Home</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Energy Snapshot</span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${smartHome.isLive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
-                {smartHome.isLive ? 'Connected' : 'Offline'}
+                {smartHome.isLive ? 'Live' : 'Offline'}
               </span>
             </div>
+            
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className="text-center">
-                <Sun size={16} className="mx-auto text-amber-500 mb-1" />
-                <div className="text-xs font-bold">{smartHome.solar}kW</div>
+                <Sun size={18} className="mx-auto text-amber-500 mb-1" />
+                <div className="text-[11px] font-bold">{smartHome.solar}kW</div>
               </div>
               <div className="text-center">
-                <Battery size={16} className="mx-auto text-emerald-500 mb-1" />
-                <div className="text-xs font-bold">{smartHome.battery}%</div>
+                <Battery size={18} className="mx-auto text-emerald-500 mb-1" />
+                <div className="text-[11px] font-bold">{smartHome.battery}%</div>
               </div>
               <div className="text-center">
-                <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
-                <div className="text-xs font-bold">{smartHome.water}%</div>
+                <Droplets size={18} className="mx-auto text-blue-500 mb-1" />
+                <div className="text-[11px] font-bold">{smartHome.water}%</div>
               </div>
             </div>
-            <div className="space-y-3 pt-2 border-t border-slate-200/50">
-              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${smartHome.battery}%` }} />
+
+            <div className="space-y-4 pt-3 border-t border-slate-200/50">
+              <div>
+                <div className="flex justify-between items-center text-[10px] text-slate-500 mb-1.5 font-medium">
+                  <span>Battery Storage</span>
+                  <span className="text-slate-800 font-bold">{smartHome.battery}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${smartHome.battery}%` }} />
+                </div>
               </div>
-              <div className="flex justify-between items-center text-[10px] text-slate-500 font-medium">
-                <span>Hot Water Tank</span>
-                <span className="font-bold text-slate-700">{smartHome.waterTemp}°C</span>
+              
+              <div className="flex justify-between items-center text-[10px] text-slate-500">
+                <span className="font-medium">Hot Water Temp</span>
+                <span className="font-bold text-slate-800">{smartHome.waterTemp}°C</span>
               </div>
             </div>
           </div>
@@ -250,7 +270,7 @@ const App = () => {
           {weather && (
             <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm">
               <div className="text-left">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Oxfordshire</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weather</span>
                 <div className="text-3xl font-bold mt-1">{weather.temp}°C</div>
               </div>
               <div className="text-right">
@@ -258,19 +278,23 @@ const App = () => {
                   <CloudRain size={16} />
                   <span>{weather.rain}%</span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium">Precip Risk</span>
+                <span className="text-[10px] text-slate-400 font-medium tracking-tight">Rain Probability</span>
               </div>
             </div>
           )}
 
           {/* School Run Card */}
-          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
+          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">School Run</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Commute</span>
                 <Navigation size={14} className="text-indigo-500" />
              </div>
-             <div className="aspect-video rounded-xl bg-slate-200 overflow-hidden relative shadow-inner">
-                <iframe className="w-full h-full border-0" src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} allowFullScreen />
+             <div className="h-40 rounded-2xl bg-slate-200 overflow-hidden shadow-inner ring-1 ring-slate-200/50">
+                <iframe 
+                  className="w-full h-full border-0" 
+                  src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
+                  allowFullScreen 
+                />
              </div>
           </div>
         </div>
@@ -279,19 +303,26 @@ const App = () => {
           onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
           className="mt-4 w-full flex items-center justify-center gap-2 p-4 rounded-2xl text-sm font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]"
         >
-          {user ? <LogOut size={18}/> : <LogIn size={18}/>} {user ? 'Sign Out' : 'Connect Google'}
+          {user ? <LogOut size={18}/> : <LogIn size={18}/>} 
+          {user ? 'Sign Out' : 'Connect Google'}
         </button>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-grow flex flex-col overflow-hidden">
+      <main className="flex-grow flex flex-col overflow-hidden bg-slate-50">
         <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10">
-          <h2 className="text-2xl font-bold text-slate-800">Family Overview</h2>
-          <div className="flex items-center gap-3">
-            {loading && <RefreshCw size={18} className="text-indigo-600 animate-spin mr-2" />}
-            <div className="flex -space-x-3">
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Family Schedule</h2>
+          <div className="flex items-center gap-6">
+            {loading && <RefreshCw size={18} className="text-indigo-600 animate-spin" />}
+            <div className="flex -space-x-2.5">
               {FAMILY_MEMBERS.map((m, i) => (
-                <div key={m} title={m} className={`w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[11px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm ring-1 ring-slate-100`}>{m[0]}</div>
+                <div 
+                  key={m} 
+                  title={m} 
+                  className={`w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold text-white shadow-sm ring-1 ring-slate-100 bg-indigo-${400 + (i*100)}`}
+                >
+                  {m[0]}
+                </div>
               ))}
             </div>
           </div>
@@ -300,54 +331,79 @@ const App = () => {
         <section className="flex-grow p-6 overflow-hidden flex flex-col gap-6">
           {!user ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
-              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100"><CalendarIcon size={40}/></div>
-              <h3 className="text-2xl font-bold text-slate-800 mb-2">Sync Required</h3>
-              <p className="text-slate-500 mb-10">Authorize Google access to display your family schedule.</p>
-              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl transition-all active:scale-95">Authorize Access</button>
+              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 border border-indigo-100/50">
+                <CalendarIcon size={40}/>
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Sync Required</h3>
+              <p className="text-slate-500 mb-10 text-sm leading-relaxed">Please authorize access to display your shared family calendars.</p>
+              <button 
+                onClick={() => tokenClient?.requestAccessToken()} 
+                className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl transition-all active:scale-95"
+              >
+                Authorize Google Access
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full overflow-hidden">
               {Object.entries(scheduleColumns).map(([key, events]) => (
-                <div key={key} className="flex flex-col h-full bg-white/50 rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="p-5 border-b border-slate-200 bg-white flex items-center justify-between">
-                    <h3 className="font-bold text-slate-800 uppercase tracking-widest text-xs">{key}</h3>
-                    <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded-full text-slate-500">{events.length} Items</span>
+                <div key={key} className="flex flex-col h-full bg-white/40 backdrop-blur-sm rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm hover:border-slate-300 transition-colors">
+                  <div className="p-5 border-b border-slate-200/60 bg-white/80 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800 uppercase tracking-widest text-[10px]">{key}</h3>
+                    <span className="text-[10px] font-bold bg-slate-100 px-2.5 py-1 rounded-full text-slate-500 border border-slate-200/50">
+                      {events.length} Items
+                    </span>
                   </div>
                   <div className="flex-grow overflow-y-auto p-4 space-y-4 hide-scroll">
                     {events.map(e => {
                       const person = e.assignedTo[0] || 'Family';
                       const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
                       return (
-                        <div key={e.id} className={`p-4 rounded-2xl border-l-4 shadow-sm transition-all hover:scale-[1.01] ${config.color}`}>
+                        <div key={e.id} className={`p-4 rounded-2xl border-l-[6px] shadow-sm transition-all hover:scale-[1.01] ${config.color}`}>
                           <div className="flex items-center justify-between mb-2">
                              <div className="flex items-center gap-1.5 font-bold text-[10px] opacity-70">
-                                <Clock size={12} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                <Clock size={12} strokeWidth={2.5} /> 
+                                {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                              </div>
-                             <span className="text-[9px] font-bold uppercase opacity-40">{e.calendarName}</span>
+                             <span className="text-[9px] font-extrabold uppercase opacity-40 tracking-wider">
+                                {e.calendarName}
+                             </span>
                           </div>
-                          <p className="text-sm font-bold leading-tight mb-3 text-center">{e.summary}</p>
-                          <div className="flex flex-wrap gap-1 justify-center">
+                          <p className="text-sm font-bold leading-tight mb-3 text-slate-800">
+                            {e.summary}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
                             {e.assignedTo.map(p => (
-                              <span key={p} className={`px-2 py-0.5 rounded-full text-[8px] font-bold text-white uppercase ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>{p}</span>
+                              <span key={p} className={`px-2.5 py-0.5 rounded-full text-[8px] font-extrabold text-white uppercase tracking-tighter shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>
+                                {p}
+                              </span>
                             ))}
                           </div>
                         </div>
                       );
                     })}
-                    {events.length === 0 && <div className="py-20 text-center text-slate-300 uppercase text-[10px] font-bold tracking-widest">Clear</div>}
+                    {events.length === 0 && (
+                      <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-bold tracking-[0.2em] opacity-50">
+                        No Schedule
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
           
-          <div className="bg-slate-900 rounded-2xl p-4 text-slate-400 font-mono text-[10px] h-32 overflow-y-auto flex flex-col-reverse">
-            {logs.map((log, i) => (
-              <div key={i} className={`py-0.5 ${log.includes('failed') || log.includes('error') ? 'text-rose-400' : 'text-emerald-400'}`}>{log}</div>
-            ))}
-            <div className="border-b border-slate-800 pb-1 mb-2 text-slate-500 flex justify-between items-center">
-              <span>SYSTEM MONITOR</span>
-              <button onClick={() => setLogs([])} className="hover:text-white uppercase">Clear Logs</button>
+          {/* Logs / Monitor */}
+          <div className="bg-slate-900 rounded-3xl p-5 text-slate-400 font-mono text-[10px] h-36 overflow-hidden flex flex-col shadow-2xl border border-slate-800">
+            <div className="border-b border-slate-800 pb-2 mb-2 text-slate-500 flex justify-between items-center font-bold tracking-widest">
+              <span className="flex items-center gap-2"><Zap size={12} className="text-amber-500" /> SYSTEM MONITOR</span>
+              <button onClick={() => setLogs([])} className="hover:text-white transition-colors">CLEAR</button>
+            </div>
+            <div className="flex-grow overflow-y-auto flex flex-col-reverse hide-scroll">
+              {logs.map((log, i) => (
+                <div key={i} className={`py-0.5 border-b border-slate-800/30 last:border-0 ${log.includes('failed') || log.includes('error') ? 'text-rose-400' : 'text-emerald-400/80'}`}>
+                  {log}
+                </div>
+              ))}
             </div>
           </div>
         </section>
