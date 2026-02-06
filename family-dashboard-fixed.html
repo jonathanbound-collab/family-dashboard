@@ -10,7 +10,6 @@
         body { font-family: 'Inter', sans-serif; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        .avatar-ring { @apply ring-2 ring-white shadow-sm; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
@@ -26,16 +25,13 @@
 
             <nav class="space-y-1.5 flex-grow" id="nav-filters">
                 <button onclick="setView('today')" id="btn-today" class="nav-btn flex items-center gap-3 w-full p-3 rounded-xl transition-all font-semibold bg-indigo-50 text-indigo-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>
                     Today
                 </button>
                 <button onclick="setView('week')" id="btn-week" class="nav-btn flex items-center gap-3 w-full p-3 rounded-xl transition-all font-medium text-slate-500 hover:bg-slate-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M7 14h10"/><path d="M7 18h10"/></svg>
                     This Week
                 </button>
                 <button onclick="setView('month')" id="btn-month" class="nav-btn flex items-center gap-3 w-full p-3 rounded-xl transition-all font-medium text-slate-500 hover:bg-slate-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><circle cx="12" cy="14" r="2"/><circle cx="12" cy="18" r="2"/></svg>
-                    Monthly View
+                    Monthly
                 </button>
             </nav>
 
@@ -44,12 +40,6 @@
                     <div id="temp-display" class="text-2xl font-bold text-slate-800">--°C</div>
                     <div id="range-display" class="text-[10px] font-medium text-slate-500">H: --° L: --°</div>
                 </div>
-
-                <div id="traffic-box" class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div id="traffic-time" class="text-xl font-bold">-- mins</div>
-                    <div id="traffic-status" class="text-[10px] font-bold uppercase tracking-tight mt-1 text-emerald-500">Checking...</div>
-                </div>
-
                 <button id="auth-btn" onclick="handleAuthAction()" class="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold transition-all bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700">
                     Connect Google
                 </button>
@@ -72,28 +62,23 @@
             </header>
 
             <section id="content-area" class="flex-grow p-8 overflow-y-auto hide-scroll flex flex-col">
-                <!-- Login UI -->
                 <div id="login-prompt" class="my-auto flex flex-col items-center justify-center text-center max-w-sm mx-auto">
                     <div class="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100">
                         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     </div>
                     <h3 class="text-2xl font-bold text-slate-800 mb-3">Calendar Sync Required</h3>
                     <p class="text-slate-500 mb-10 text-base leading-relaxed">Securely authorize access to your family calendars to populate your dashboard.</p>
-                    <button onclick="handleAuthAction()" class="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100">Authorize Google Access</button>
+                    <button onclick="handleAuthAction()" class="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95">Authorize Google Access</button>
                 </div>
 
-                <!-- Dashboard Grid -->
                 <div id="calendar-grid" class="hidden grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8 items-start mb-12"></div>
                 
-                <!-- Expanded Debug Console -->
+                <!-- Monitor -->
                 <div id="debug-info" class="mt-auto p-4 bg-slate-900 text-slate-300 text-[10px] font-mono rounded-xl">
                     <div class="flex items-center justify-between mb-2 border-b border-slate-800 pb-1">
                         <span class="text-slate-500 uppercase tracking-widest">System Monitor</span>
-                        <button onclick="document.getElementById('debug-info').classList.add('hidden')" class="text-slate-500 hover:text-white">✕</button>
                     </div>
-                    <div id="debug-log" class="space-y-1">
-                        <div class="text-slate-500 italic">> System initialized. Waiting for connection...</div>
-                    </div>
+                    <div id="debug-log" class="space-y-1"></div>
                 </div>
             </section>
         </main>
@@ -123,7 +108,7 @@
             const logEl = document.getElementById('debug-log');
             const entry = document.createElement('div');
             entry.className = isError ? 'text-rose-400 font-bold' : 'text-emerald-400';
-            entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            entry.innerText = `> ${msg}`;
             logEl.appendChild(entry);
             console.log(msg);
         }
@@ -147,10 +132,12 @@
             return assigned.length === 0 ? FAMILY_MEMBERS : assigned;
         }
 
-        async function fetchEvents() {
+        async function fetchEvents(token) {
+            accessToken = token || accessToken;
             if (!accessToken) return;
+
             document.getElementById('loading-spinner').classList.remove('hidden');
-            logDebug("Attempting to load Google Calendar events...");
+            logDebug("Starting Fetch via REST API...");
             
             const now = new Date();
             now.setHours(0,0,0,0);
@@ -162,55 +149,44 @@
                 const seenEventIds = new Set();
 
                 for (const id of CALENDAR_IDS) {
-                    logDebug(`Accessing: ${id}...`);
+                    logDebug(`Requesting calendar: ${id}...`);
+                    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(id)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`;
                     
-                    try {
-                        const response = await gapi.client.calendar.events.list({
-                            'calendarId': id,
-                            'timeMin': timeMin,
-                            'timeMax': timeMax,
-                            'showDeleted': false,
-                            'singleEvents': true,
-                            'maxResults': 100,
-                            'orderBy': 'startTime',
-                        });
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
 
-                        const items = response.result.items;
-                        if (items && items.length > 0) {
-                            logDebug(`Success: Found ${items.length} events in ${id}`);
-                            items.forEach(item => {
-                                if (!seenEventIds.has(item.id)) {
-                                    seenEventIds.add(item.id);
-                                    fetched.push({
-                                        id: item.id,
-                                        summary: item.summary,
-                                        assignedTo: categorizeEvent(item),
-                                        calendarName: (id === 'primary' || id.includes('gmail')) ? 'Personal' : 'Family',
-                                        start_date: new Date(item.start.dateTime || item.start.date)
-                                    });
-                                }
-                            });
-                        } else {
-                            logDebug(`Note: ${id} returned 0 upcoming events.`);
-                        }
-                    } catch (calendarErr) {
-                        logDebug(`Alert: Could not read ${id}. (Error: ${calendarErr.status})`, true);
+                    if (!response.ok) {
+                        const err = await response.json();
+                        logDebug(`Alert: ${id} failed (${response.status}). ${err.error?.message || ''}`, true);
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    if (data.items) {
+                        logDebug(`Found ${data.items.length} events in ${id}`);
+                        data.items.forEach(item => {
+                            if (!seenEventIds.has(item.id)) {
+                                seenEventIds.add(item.id);
+                                fetched.push({
+                                    id: item.id,
+                                    summary: item.summary,
+                                    assignedTo: categorizeEvent(item),
+                                    calendarName: (id === 'primary' || id.includes('gmail')) ? 'Personal' : 'Family',
+                                    start_date: new Date(item.start.dateTime || item.start.date)
+                                });
+                            }
+                        });
                     }
                 }
 
                 allEvents = fetched.sort((a, b) => a.start_date - b.start_date);
-                logDebug(`Render complete: Displaying ${allEvents.length} unique events.`);
+                logDebug(`Dashboard Updated. Total events: ${allEvents.length}`);
                 
-                if (allEvents.length > 0) {
-                    renderGrid();
-                    showDashboard();
-                } else {
-                    logDebug("Alert: Authorization worked, but no events were found in the selected date range.", true);
-                    renderGrid(); 
-                    showDashboard();
-                }
+                renderGrid();
+                showDashboard();
             } catch (err) {
-                logDebug(`Critical Failure: ${err.message || 'API Load Error'}`, true);
+                logDebug(`Critical Failure: ${err.message}`, true);
                 showLogin();
             } finally {
                 document.getElementById('loading-spinner').classList.add('hidden');
@@ -269,6 +245,7 @@
             document.getElementById('login-prompt').classList.remove('hidden');
             document.getElementById('calendar-grid').classList.add('hidden');
             document.getElementById('auth-btn').innerText = 'Connect Google';
+            document.getElementById('auth-btn').className = "w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold transition-all bg-indigo-600 text-white shadow-lg shadow-indigo-100";
         }
 
         function handleAuthAction() {
@@ -277,35 +254,19 @@
                 allEvents = [];
                 showLogin();
             } else {
-                logDebug("Redirecting to Google for authorization...");
+                logDebug("Redirecting to Google...");
                 tokenClient.requestAccessToken();
             }
-        }
-
-        function updateTraffic() {
-            const now = new Date();
-            const hour = now.getHours();
-            let duration = 15;
-            let status = 'Clear roads';
-            let colorClass = 'text-emerald-500';
-            if (hour >= 7 && hour <= 9) { duration = 26; status = 'Moderate traffic'; colorClass = 'text-amber-500'; }
-            else if (hour >= 15 && hour <= 17) { duration = 32; status = 'Heavy traffic'; colorClass = 'text-rose-500'; }
-            document.getElementById('traffic-time').innerText = `${duration} mins`;
-            const statusEl = document.getElementById('traffic-status');
-            statusEl.innerText = status;
-            statusEl.className = `text-[10px] font-bold uppercase tracking-tight mt-1 ${colorClass}`;
         }
 
         window.onload = () => {
             document.getElementById('current-date-str').innerText = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
             
-            // Build Avatars
             const avatarContainer = document.getElementById('member-avatars');
             FAMILY_MEMBERS.forEach((m, i) => {
                 avatarContainer.innerHTML += `<div title="${m}" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[11px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm ring-1 ring-slate-100 hover:scale-110 transition-transform cursor-default z-${50-(i*10)}">${m[0]}</div>`;
             });
 
-            // Load External Data
             fetch('https://api.open-meteo.com/v1/forecast?latitude=51.7836&longitude=-1.4883&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/London')
                 .then(res => res.json())
                 .then(data => {
@@ -313,42 +274,28 @@
                     document.getElementById('temp-display').innerText = `${Math.round(data.current.temperature_2m)}°C`;
                     document.getElementById('range-display').innerText = `H: ${Math.round(data.daily.temperature_2m_max[0])}° L: ${Math.round(data.daily.temperature_2m_min[0])}°`;
                 });
-            updateTraffic();
 
-            // Load Google APIs
-            const gapiScript = document.createElement('script');
-            gapiScript.src = "https://apis.google.com/js/api.js";
-            gapiScript.onload = () => {
-                window.gapi.load('client', async () => {
-                    logDebug("GAPI loaded. Checking discovery documents...");
-                    await gapi.client.init({
-                        discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
-                    });
-                    
-                    // Check for token in URL after redirect
-                    const hash = window.location.hash;
-                    if (hash.includes('access_token')) {
-                        logDebug("Token detected in URL. Finalizing connection...");
-                        const params = new URLSearchParams(hash.substring(1));
-                        accessToken = params.get('access_token');
-                        gapi.client.setToken({ access_token: accessToken });
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        fetchEvents();
-                    }
-                });
-            };
-            document.body.appendChild(gapiScript);
-
+            // Load Google Library
             const gisScript = document.createElement('script');
             gisScript.src = "https://accounts.google.com/gsi/client";
             gisScript.onload = () => {
-                logDebug("GIS Library ready.");
+                logDebug("Identity Library Ready.");
                 tokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: CLIENT_ID,
                     scope: SCOPES,
                     ux_mode: 'redirect',
                     redirect_uri: window.location.origin + window.location.pathname,
                 });
+
+                // Check for token on return
+                const hash = window.location.hash;
+                if (hash.includes('access_token')) {
+                    logDebug("Processing return from Google...");
+                    const params = new URLSearchParams(hash.substring(1));
+                    const token = params.get('access_token');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    fetchEvents(token);
+                }
             };
             document.body.appendChild(gisScript);
         };
