@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, Clock, LayoutDashboard,
   LogIn, LogOut, RefreshCw, Sun, Battery, Droplets, 
   CloudRain, Navigation, Zap, Map as MapIcon,
-  CheckSquare, Plus, Trash2, MessageSquare, PlusCircle
+  CheckSquare, Plus, Trash2, PlusCircle
 } from 'lucide-react';
 
 // --- Configuration ---
@@ -11,21 +11,9 @@ const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleuser
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
 const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
 
-// Re-ordered proxies based on performance and POST support
-const PROXIES = [
-  'https://corsproxy.io/?url=',              // Path A: Supports POST, usually fastest
-  'https://api.codetabs.com/v1/proxy?quest=', // Path B: Simple and fast for GET
-  'https://api.allorigins.win/raw?url=',     // Path C: Reliable but slow
-];
-
 const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
 const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
 const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
-
-const MIXERGY_USER = 'jonathan.bound@gmail.com'; 
-const MIXERGY_PASS = 'sQWEas1WOODLANE'; 
-const SOLAREDGE_SITE_ID = '2616645'; 
-const SOLAREDGE_API_KEY = 'BV7EJBCK53037E26DYIZSEWFCYJGI1FG'; 
 
 const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
 const MEMBER_CONFIG = {
@@ -40,36 +28,29 @@ const MEMBER_CONFIG = {
 const App = () => {
   const [allEvents, setAllEvents] = useState([]);
   const [weather, setWeather] = useState(null);
-  const [smartHome, setSmartHome] = useState({ solar: 0, battery: 0, water: 0, waterTemp: 0, isLive: false });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tokenClient, setTokenClient] = useState(null);
-  const [mixergyToken, setMixergyToken] = useState(null);
-  const [logs, setLogs] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  const isUpdating = useRef(false);
-
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('family_tasks');
     try {
       return saved ? JSON.parse(saved) : [
-        { id: 1, text: 'Renew school bus passes', completed: false, category: 'Family' },
-        { id: 2, text: 'Order logs for burner', completed: true, category: 'Jonathan' }
+        { id: 1, text: 'Renew school bus passes', completed: false },
+        { id: 2, text: 'Order logs for burner', completed: true }
       ];
     } catch (e) { return []; }
   });
   const [newTaskText, setNewTaskText] = useState('');
 
-  const addLog = useCallback((msg, isError = false) => {
-    setLogs(prev => [`${new Date().toLocaleTimeString()} > ${msg}`, ...prev].slice(0, 15));
-  }, []);
-
+  // Update Clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // Persist Tasks
   useEffect(() => {
     localStorage.setItem('family_tasks', JSON.stringify(tasks));
   }, [tasks]);
@@ -82,143 +63,7 @@ const App = () => {
       body { background-color: #f8fafc; }
     `;
     document.head.appendChild(style);
-    
-    const savedToken = localStorage.getItem('mixergy_token');
-    if (savedToken) {
-      setMixergyToken(savedToken);
-      addLog("Mixergy token restored from local cache");
-    }
-  }, [addLog]);
-
-  // Robust Fetcher: Handles timeouts and proxy rotation
-  const robustFetch = async (url, options = {}, timeoutMs = 15000) => {
-    let lastError;
-    const pathLabels = ['A', 'B', 'C'];
-    
-    // If it's a POST, we only try proxies known to handle them well
-    const proxyList = options.method === 'POST' ? [PROXIES[0]] : PROXIES;
-
-    for (let i = 0; i < proxyList.length; i++) {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      
-      try {
-        const fullUrl = proxyList[i].includes('?') 
-          ? `${proxyList[i]}${encodeURIComponent(url)}` 
-          : `${proxyList[i]}${url}`;
-
-        const response = await fetch(fullUrl, {
-          ...options,
-          signal: controller.signal,
-          headers: {
-            ...options.headers,
-            'Accept': 'application/json'
-          }
-        });
-
-        clearTimeout(id);
-        if (response.ok) return await response.json();
-        throw new Error(`HTTP ${response.status}`);
-      } catch (e) {
-        clearTimeout(id);
-        lastError = e;
-        const msg = e.name === 'AbortError' ? 'Timeout' : e.message;
-        addLog(`Path ${pathLabels[i]} fail: ${msg}`);
-        continue;
-      }
-    }
-    throw lastError || new Error("Connection failed");
-  };
-
-  const updateSmartHome = useCallback(async () => {
-    if (isUpdating.current) return;
-    isUpdating.current = true;
-    addLog("Updating Energy Snapshot...");
-
-    // ==================== SOLAREDGE ====================
-    try {
-      const ovUrl = `https://monitoringapi.solaredge.com/site/${SOLAREDGE_SITE_ID}/overview?api_key=${SOLAREDGE_API_KEY}&cache=${Date.now()}`;
-      const ovData = await robustFetch(ovUrl);
-      
-      if (ovData?.overview) {
-        const solar = (ovData.overview.currentPower?.power / 1000 || 0).toFixed(2);
-        setSmartHome(prev => ({ ...prev, solar, isLive: true }));
-        addLog(`✓ Solar: ${solar}kW`);
-      }
-
-      const flowUrl = `https://monitoringapi.solaredge.com/site/${SOLAREDGE_SITE_ID}/currentPowerFlow?api_key=${SOLAREDGE_API_KEY}`;
-      const pwData = await robustFetch(flowUrl);
-      if (pwData?.siteCurrentPowerFlow?.STORAGE?.chargeLevel !== undefined) {
-        const battery = Math.round(pwData.siteCurrentPowerFlow.STORAGE.chargeLevel);
-        setSmartHome(prev => ({ ...prev, battery }));
-        addLog(`✓ Battery: ${battery}%`);
-      }
-    } catch (e) {
-      addLog(`✗ SolarEdge: ${e.message}`, true);
-    }
-
-    // ==================== MIXERGY ====================
-    try {
-      let mToken = mixergyToken;
-      const base = 'https://www.mixergy.io/api/v2';
-
-      // 1. Authenticate (using known path to save round-trips)
-      if (!mToken) {
-        addLog("Mixergy auth: POST...");
-        const loginUrl = `${base}/account/login`;
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 12000);
-        
-        const loginResp = await fetch(PROXIES[0] + encodeURIComponent(loginUrl), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ username: MIXERGY_USER, password: MIXERGY_PASS }),
-          signal: controller.signal
-        });
-        clearTimeout(tid);
-
-        if (loginResp.ok) {
-          const loginData = await loginResp.json();
-          mToken = loginData.token;
-          setMixergyToken(mToken);
-          localStorage.setItem('mixergy_token', mToken);
-          addLog("✓ Mixergy Session OK");
-        } else {
-          throw new Error(`Auth fail ${loginResp.status}`);
-        }
-      }
-
-      // 2. Fetch Measurements (Direct lookup strategy)
-      if (mToken) {
-        // We first try to get tanks list to find the measurement link
-        const tanksUrl = `${base}/tanks`;
-        const tanksData = await robustFetch(tanksUrl, {
-          headers: { 'Authorization': `Bearer ${mToken}` }
-        });
-        
-        const tank = tanksData?._embedded?.tankList?.[0];
-        const mLink = tank?._links?.latest_measurement?.href;
-
-        if (mLink) {
-          const m = await robustFetch(mLink, {
-            headers: { 'Authorization': `Bearer ${mToken}` }
-          });
-          const water = Math.round(m.charge ?? 0);
-          const waterTemp = Math.round(m.topTemperature ?? m.canTemperature ?? 0);
-          setSmartHome(prev => ({ ...prev, water, waterTemp, isLive: true }));
-          addLog(`✓ Tank: ${water}% @ ${waterTemp}°C`);
-        }
-      }
-    } catch (e) {
-      addLog(`✗ Mixergy: ${e.message}`, true);
-      if (e.message.includes('401')) {
-        setMixergyToken(null);
-        localStorage.removeItem('mixergy_token');
-      }
-    } finally {
-      isUpdating.current = false;
-    }
-  }, [mixergyToken, addLog]);
+  }, []);
 
   const categorizeEvent = (event) => {
     const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
@@ -253,13 +98,12 @@ const App = () => {
             start_date: new Date(item.start.dateTime || item.start.date)
           }));
           fetched = [...fetched, ...items];
-        } catch (e) { addLog(`Calendar ${id} restricted`, true); }
+        } catch (e) { console.error(`Calendar ${id} restricted`); }
       }
       setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
-      addLog("Calendar synchronized.");
-    } catch (err) { addLog("Sync fail: Google API", true); }
+    } catch (err) { console.error("Sync fail: Google API", err); }
     finally { setLoading(false); }
-  }, [addLog]);
+  }, []);
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -292,16 +136,12 @@ const App = () => {
       .then(r => r.json()).then(d => setWeather({ 
         temp: Math.round(d.current.temperature_2m), 
         rain: d.daily.precipitation_probability_max[0] 
-      })).catch(() => addLog("Weather check failed", true));
-    
-    updateSmartHome();
-    const interval = setInterval(updateSmartHome, 300000); 
-    return () => clearInterval(interval);
-  }, [fetchEvents, updateSmartHome]); 
+      })).catch(err => console.error("Weather check failed", err));
+  }, [fetchEvents]); 
 
   const addTask = () => {
     if (!newTaskText.trim()) return;
-    setTasks([...tasks, { id: Date.now(), text: newTaskText, completed: false, category: 'Family' }]);
+    setTasks([...tasks, { id: Date.now(), text: newTaskText, completed: false }]);
     setNewTaskText('');
   };
 
@@ -332,60 +172,25 @@ const App = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left">
+      {/* Sidebar */}
       <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col items-start hidden lg:flex shadow-sm z-20 overflow-y-auto hide-scroll">
-        <div className="flex items-center gap-4 mb-8 w-full text-left">
+        <div className="flex items-center gap-4 mb-8 w-full">
           <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100 flex-shrink-0">
             <LayoutDashboard size={22} />
           </div>
-          <div className="text-left">
+          <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-800">FamilyHub</h1>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none text-left">Southmoor</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Southmoor</p>
           </div>
         </div>
 
         <div className="space-y-6 w-full">
-          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group w-full text-left">
-            <div className="flex items-center justify-between mb-5 w-full text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">Energy Snapshot</span>
-              <button onClick={updateSmartHome} className="hover:rotate-180 transition-transform duration-500">
-                <RefreshCw size={12} className={`text-slate-400 ${smartHome.isLive ? 'text-emerald-500' : ''}`} />
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-3 mb-6 w-full text-left">
-              <div className="text-left">
-                <Sun size={18} className="text-amber-500 mb-1.5" />
-                <div className="text-sm font-bold tracking-tight text-slate-800">{smartHome.solar}kW</div>
-                <div className="text-[8px] text-slate-400 font-bold uppercase">Solar</div>
-              </div>
-              <div className="text-left border-x border-slate-200 px-2">
-                <Battery size={18} className="text-emerald-500 mb-1.5" />
-                <div className="text-sm font-bold tracking-tight text-slate-800">{smartHome.battery}%</div>
-                <div className="text-[8px] text-slate-400 font-bold uppercase">Battery</div>
-              </div>
-              <div className="text-left">
-                <Droplets size={18} className="text-blue-500 mb-1.5" />
-                <div className="text-sm font-bold tracking-tight text-slate-800">{smartHome.water}%</div>
-                <div className="text-[8px] text-slate-400 font-bold uppercase">Water</div>
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-3 border-t border-slate-200/50 w-full text-left">
-              <div className="flex justify-between items-center text-[10px] text-slate-500 mb-2 font-bold uppercase tracking-tighter w-full text-left">
-                <span>Hot Water Tank</span>
-                <span className="text-blue-600 font-bold">{smartHome.waterTemp}°C</span>
-              </div>
-              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden shadow-inner flex">
-                <div className="h-full bg-blue-500 transition-all duration-1000 ease-out" style={{ width: `${smartHome.water}%` }} />
-              </div>
-            </div>
-          </div>
-
+          {/* Weather Section */}
           {weather && (
-            <div className="p-5 bg-white rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm w-full text-left">
+            <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm w-full">
               <div className="text-left">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">Weather</span>
-                <div className="text-3xl font-black text-slate-800 mt-1 tracking-tighter text-left">{weather.temp}°C</div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weather</span>
+                <div className="text-3xl font-black text-slate-800 mt-1 tracking-tighter">{weather.temp}°C</div>
               </div>
               <div className="text-right">
                 <div className="text-blue-500 flex items-center gap-1.5 justify-end font-bold text-sm">
@@ -397,66 +202,88 @@ const App = () => {
             </div>
           )}
 
+          {/* Task List */}
           <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm w-full text-left">
-            <div className="flex items-center justify-between mb-4 text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">Shared To-Do</span>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shared To-Do</span>
               <CheckSquare size={14} className="text-emerald-500" />
             </div>
-            <div className="space-y-2 mb-4 max-h-48 overflow-y-auto hide-scroll text-left">
+            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto hide-scroll">
               {tasks.map(task => (
-                <div key={task.id} className="flex items-center gap-3 group text-left">
-                  <button onClick={() => toggleTask(task.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}>
+                <div key={task.id} className="flex items-center gap-3 group">
+                  <button 
+                    onClick={() => toggleTask(task.id)}
+                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
+                  >
                     {task.completed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                   </button>
-                  <span className={`text-xs flex-grow text-left ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
+                  <span className={`text-xs flex-grow truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
                     {task.text}
                   </span>
-                  <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all">
+                  <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all flex-shrink-0">
                     <Trash2 size={12} />
                   </button>
                 </div>
               ))}
             </div>
-            <div className="relative text-left">
-              <input type="text" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addTask()} placeholder="Add task..." className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all text-left" />
-              <button onClick={addTask} className="absolute right-2 top-1.5 text-indigo-500 hover:text-indigo-700"><PlusCircle size={18} /></button>
+            <div className="relative">
+              <input 
+                type="text" 
+                value={newTaskText}
+                onChange={(e) => setNewTaskText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                placeholder="Add task..."
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+              />
+              <button onClick={addTask} className="absolute right-2 top-1.5 text-indigo-500 hover:text-indigo-700">
+                <PlusCircle size={18} />
+              </button>
             </div>
           </div>
 
-          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm overflow-hidden w-full text-left">
-            <div className="flex items-center justify-between mb-4 w-full text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">School Run</span>
+          {/* School Run Section - Restored Visuals */}
+          <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden w-full text-left">
+            <div className="flex items-center justify-between mb-4 w-full">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">School Run</span>
               <Navigation size={14} className="text-indigo-500" />
             </div>
-            <div className="h-32 rounded-2xl bg-slate-200 overflow-hidden shadow-inner text-left">
-              <iframe className="w-full h-full border-0 grayscale opacity-80" src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} allowFullScreen />
+            <div className="h-80 rounded-2xl bg-slate-200 overflow-hidden shadow-inner ring-1 ring-slate-100">
+              <iframe 
+                className="w-full h-full border-0" 
+                src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
+                allowFullScreen 
+              />
             </div>
           </div>
         </div>
 
-        <button onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} className="mt-auto w-full flex items-center justify-center gap-3 p-4 rounded-2xl text-sm font-bold bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 transition-all">
+        <button 
+          onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
+          className="mt-auto w-full flex items-center justify-center gap-3 p-4 rounded-2xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all"
+        >
           {user ? <LogOut size={16}/> : <LogIn size={16}/>} 
           {user ? 'Sign Out' : 'Sync Google'}
         </button>
       </aside>
 
-      <main className="flex-grow flex flex-col overflow-hidden bg-slate-50 text-left">
-        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10 text-left">
+      {/* Main Content Area */}
+      <main className="flex-grow flex flex-col overflow-hidden bg-slate-50">
+        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10">
           <div className="text-left">
-            <h2 className="text-3xl font-black text-slate-800 tracking-tight text-left">{greeting}, Bounds</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2 text-left">
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight">{greeting}, Bounds</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-               Witney Hub • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+               Hub Control • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
             </p>
           </div>
-          <div className="flex items-center gap-8 text-left">
-            <div className="text-right hidden md:block text-left">
-               <div className="text-2xl font-black text-slate-800 tracking-tighter leading-none text-right">
+          <div className="flex items-center gap-8">
+            <div className="text-right hidden md:block">
+               <div className="text-2xl font-black text-slate-800 tracking-tighter leading-none">
                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                </div>
-               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Local Time</div>
+               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Local Time</div>
             </div>
-            <div className="flex -space-x-2.5 text-left">
+            <div className="flex -space-x-2.5">
               {FAMILY_MEMBERS.map((m, i) => (
                 <div key={m} title={m} className={`w-10 h-10 rounded-full border-4 border-white flex items-center justify-center text-[10px] font-black text-white shadow-md ring-1 ring-slate-100 bg-indigo-${400 + (i*100)}`}>
                   {m[0]}
@@ -466,22 +293,22 @@ const App = () => {
           </div>
         </header>
 
-        <section className="flex-grow p-8 overflow-hidden flex flex-col gap-6 text-left">
+        <section className="flex-grow p-8 overflow-hidden flex flex-col gap-6">
           {!user ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto text-left">
-              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse mx-auto">
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
+              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse">
                 <CalendarIcon size={40}/>
               </div>
-              <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight mx-auto">Sync Calendars</h3>
-              <p className="text-slate-500 mb-10 text-sm font-medium leading-relaxed mx-auto">Connect your Google account to view shared family schedules and school runs.</p>
-              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95 mx-auto">Authorize Access</button>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Sync Calendars</h3>
+              <p className="text-slate-500 mb-10 text-sm font-medium leading-relaxed">Connect your Google account to view shared family schedules and school runs.</p>
+              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95">Authorize Access</button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full overflow-hidden text-left">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full overflow-hidden">
               {Object.entries(scheduleColumns).map(([key, events]) => (
-                <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow text-left">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between text-left">
-                    <h3 className="font-black text-slate-800 uppercase tracking-widest text-[11px] text-left">{key}</h3>
+                <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
+                    <h3 className="font-black text-slate-800 uppercase tracking-widest text-[11px]">{key}</h3>
                     <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full shadow-lg shadow-indigo-100">{events.length}</span>
                   </div>
                   <div className="flex-grow overflow-y-auto p-5 space-y-4 hide-scroll text-left">
@@ -505,30 +332,15 @@ const App = () => {
                         </div>
                       );
                     })}
-                    {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-black tracking-[0.4em] opacity-40 flex flex-col items-center gap-3 mx-auto text-left">
+                    {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-black tracking-[0.4em] opacity-40 flex flex-col items-center gap-3">
                       <MapIcon size={32} />
-                      No Events
+                      Clear Schedule
                     </div>}
                   </div>
                 </div>
               ))}
             </div>
           )}
-          
-          <div className="bg-slate-900 rounded-3xl p-5 text-slate-400 font-mono text-[10px] h-32 overflow-hidden flex flex-col shadow-2xl border border-white/5 text-left">
-            <div className="border-b border-slate-800 pb-2 mb-2 flex justify-between items-center font-bold tracking-widest uppercase text-left">
-              <span className="flex items-center gap-2 text-indigo-400 text-left"><Zap size={12} className="text-amber-400 animate-pulse text-left" /> System Logs</span>
-              <div className="flex gap-4 text-left">
-                {loading && <RefreshCw size={10} className="animate-spin" />}
-                <button onClick={() => setLogs([])} className="hover:text-white transition-colors text-[8px]">Clear Logs</button>
-              </div>
-            </div>
-            <div className="flex-grow overflow-y-auto flex flex-col-reverse hide-scroll text-left">
-              {logs.map((log, i) => (
-                <div key={i} className={`py-0.5 border-b border-slate-800/20 last:border-0 text-left ${log.includes('fail') || log.includes('Error') || log.includes('✗') ? 'text-rose-400' : 'text-emerald-400/80'}`}>{log}</div>
-              ))}
-            </div>
-          </div>
         </section>
       </main>
     </div>
