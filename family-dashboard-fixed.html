@@ -11,27 +11,12 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Core -->
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-        
-        body { 
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc; 
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* Map container styling - ensuring full color and specific height */
-        .map-container iframe {
-            width: 100%;
-            height: 100%;
-            border: 0;
-            border-radius: 1.5rem;
-            filter: none !important; /* Force no grayscale */
-            opacity: 1 !important;   /* Force full opacity */
-        }
+        iframe { filter: none !important; opacity: 1 !important; border-radius: 1.5rem; }
     </style>
 </head>
 <body>
@@ -44,7 +29,6 @@
         const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
         const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
         const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
-
         const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
         const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
         const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
@@ -59,40 +43,19 @@
             'Family': { color: 'bg-emerald-50 text-emerald-800 border-emerald-200', tag: 'bg-emerald-600', variations: [] }
         };
 
-        /**
-         * Ultra-Resilient Icon Component
-         * Manually parses Lucide icon data to avoid destructuring and mapping errors
-         * caused by version differences or browser script optimization.
-         */
-        const Icon = ({ name, size = 20, className = "", strokeWidth = 2 }) => {
-            const iconData = window.lucide?.icons?.[name];
-            if (!iconData) return <div style={{ width: size, height: size }} className={className} />;
-
-            // Lucide icons are typically [tagName, attributes, childrenArray]
-            const children = iconData[2];
-            if (!Array.isArray(children)) return null;
-
-            return (
-                <svg
-                    width={size}
-                    height={size}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={className}
-                >
-                    {children.map((child, idx) => {
-                        // Handle both Array [tag, attrs] and Object {tag, attrs} formats for safety
-                        const tag = Array.isArray(child) ? child[0] : (child.tag || child.name);
-                        const attrs = Array.isArray(child) ? child[1] : (child.attrs || child.attributes);
-                        if (!tag) return null;
-                        return React.createElement(tag, { ...attrs, key: idx });
-                    })}
-                </svg>
-            );
+        // --- Native SVG Icons (Eliminates all Lucide errors) ---
+        const Icons = {
+            Dashboard: () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>,
+            Weather: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
+            CheckSquare: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>,
+            Navigation: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>,
+            Clock: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+            Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
+            Plus: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>,
+            Alert: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+            Login: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>,
+            Logout: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
+            Calendar: () => <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         };
 
         const App = () => {
@@ -102,8 +65,6 @@
             const [loading, setLoading] = useState(false);
             const [tokenClient, setTokenClient] = useState(null);
             const [currentTime, setCurrentTime] = useState(new Date());
-            
-            // Helpful for local testing
             const [originError, setOriginError] = useState(window.location.protocol === 'file:');
             
             const [tasks, setTasks] = useState(() => {
@@ -113,10 +74,7 @@
                         { id: 1, text: 'Renew school bus passes', completed: false },
                         { id: 2, text: 'Order logs for burner', completed: true }
                     ];
-                } catch (e) { 
-                    console.warn("Storage blocked by browser tracking prevention. Falling back to session memory.");
-                    return []; 
-                }
+                } catch (e) { return []; }
             });
             const [newTaskText, setNewTaskText] = useState('');
 
@@ -126,11 +84,7 @@
             }, []);
 
             useEffect(() => {
-                try {
-                    localStorage.setItem('family_tasks', JSON.stringify(tasks));
-                } catch (e) {
-                    // Fail silently if tracking prevention blocks writing
-                }
+                try { localStorage.setItem('family_tasks', JSON.stringify(tasks)); } catch (e) {}
             }, [tasks]);
 
             const categorizeEvent = (event) => {
@@ -166,10 +120,10 @@
                                 start_date: new Date(item.start.dateTime || item.start.date)
                             }));
                             fetched = [...fetched, ...items];
-                        } catch (e) { console.warn(`Calendar ${id} restricted`); }
+                        } catch (e) { console.warn(`Calendar ${id} access restricted`); }
                     }
                     setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
-                } catch (err) { console.error("Sync fail: Google API", err); }
+                } catch (err) { console.error("Sync fail", err); }
                 finally { setLoading(false); }
             }, []);
 
@@ -242,28 +196,27 @@
                 <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left relative">
                     {/* Origin Security Alert */}
                     {originError && (
-                        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] bg-white border border-rose-100 p-4 rounded-3xl shadow-2xl max-w-xl animate-in fade-in slide-in-from-top-4 duration-500">
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] bg-white border border-rose-100 p-6 rounded-[2rem] shadow-2xl max-w-xl">
                             <div className="flex gap-4">
-                                <div className="bg-rose-50 p-2 rounded-xl text-rose-500">
-                                    <Icon name="ShieldAlert" size={24} />
+                                <div className="bg-rose-50 p-3 rounded-2xl text-rose-500 flex-shrink-0">
+                                    <Icons.Alert />
                                 </div>
-                                <div>
-                                    <p className="text-sm font-black text-slate-800">Local Protocol Restriction</p>
+                                <div className="text-left">
+                                    <p className="text-sm font-black text-slate-800">Browser Security Restriction</p>
                                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                        Google Calendar synchronization requires a secure web origin. 
-                                        To enable sync, please run this file through a <strong>local server</strong> (e.g. VS Code Live Server) 
-                                        instead of opening the <code>.html</code> file directly.
+                                        Google Calendar sync requires a web server to function. 
+                                        Please use a local server (e.g. VS Code Live Server) instead of opening the file directly.
                                     </p>
-                                    <button onClick={() => setOriginError(false)} className="mt-3 text-[10px] uppercase font-black tracking-widest text-rose-600 hover:text-rose-700 transition-colors">Dismiss Alert</button>
+                                    <button onClick={() => setOriginError(false)} className="mt-3 text-[10px] uppercase font-black tracking-widest text-rose-600 hover:underline">Dismiss</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col items-start hidden lg:flex shadow-sm z-20 overflow-y-auto hide-scroll">
-                        <div className="flex items-center gap-4 mb-10 w-full text-left">
+                        <div className="flex items-center gap-4 mb-10 w-full">
                             <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-100 flex-shrink-0">
-                                <Icon name="LayoutDashboard" size={24} />
+                                <Icons.Dashboard />
                             </div>
                             <div className="text-left">
                                 <h1 className="text-2xl font-black tracking-tight text-slate-800">FamilyHub</h1>
@@ -272,7 +225,6 @@
                         </div>
 
                         <div className="space-y-6 w-full">
-                            {/* Weather */}
                             {weather && (
                                 <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 flex items-center justify-between shadow-sm w-full">
                                     <div className="text-left">
@@ -281,60 +233,58 @@
                                     </div>
                                     <div className="text-right">
                                         <div className="text-blue-500 flex items-center gap-1.5 justify-end font-bold text-sm">
-                                            <Icon name="CloudRain" size={16} strokeWidth={3} />
+                                            <Icons.Weather />
                                             <span>{weather.rain}%</span>
                                         </div>
-                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-right">Rain Chance</span>
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Precipitation</span>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Shared Tasks */}
                             <div className="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm w-full text-left">
                                 <div className="flex items-center justify-between mb-5">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shared To-Do</span>
-                                    <Icon name="CheckSquare" size={16} className="text-emerald-500" />
+                                    <div className="text-emerald-500"><Icons.CheckSquare /></div>
                                 </div>
-                                <div className="space-y-3 mb-6 max-h-64 overflow-y-auto hide-scroll text-left">
+                                <div className="space-y-3 mb-6 max-h-64 overflow-y-auto hide-scroll">
                                     {tasks.map(task => (
-                                        <div key={task.id} className="flex items-center gap-4 group text-left">
+                                        <div key={task.id} className="flex items-center gap-4 group">
                                             <button 
                                                 onClick={() => toggleTask(task.id)}
                                                 className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-200 hover:border-emerald-400'}`}
                                             >
-                                                {task.completed && <Icon name="Check" size={12} strokeWidth={4} className="text-white" />}
+                                                {task.completed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                             </button>
                                             <span className={`text-sm font-semibold flex-grow truncate text-left ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
                                                 {task.text}
                                             </span>
                                             <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all flex-shrink-0">
-                                                <Icon name="Trash2" size={14} />
+                                                <Icons.Trash />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="relative text-left">
+                                <div className="relative">
                                     <input 
                                         type="text" 
                                         value={newTaskText}
                                         onChange={(e) => setNewTaskText(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && addTask()}
-                                        placeholder="Add family task..."
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all placeholder:text-slate-300"
+                                        placeholder="Add task..."
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
                                     />
                                     <button onClick={addTask} className="absolute right-3 top-2.5 text-indigo-500 hover:text-indigo-700">
-                                        <Icon name="PlusCircle" size={20} />
+                                        <Icons.Plus />
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Large Map */}
                             <div className="p-5 bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden w-full text-left">
-                                <div className="flex items-center justify-between mb-4 w-full text-left">
+                                <div className="flex items-center justify-between mb-4 w-full">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">School Run</span>
-                                    <Icon name="Navigation" size={16} className="text-indigo-500" />
+                                    <div className="text-indigo-500"><Icons.Navigation /></div>
                                 </div>
-                                <div className="h-[450px] rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-1 ring-slate-100 map-container">
+                                <div className="h-[500px] rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-1 ring-slate-100">
                                     <iframe 
                                         src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
                                         allowFullScreen 
@@ -345,33 +295,33 @@
 
                         <button 
                             onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
-                            className="mt-10 w-full flex items-center justify-center gap-3 p-5 rounded-3xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all text-left"
+                            className="mt-10 w-full flex items-center justify-center gap-3 p-5 rounded-3xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all"
                         >
-                            {user ? <Icon name="LogOut" size={18}/> : <Icon name="LogIn" size={18}/>} 
-                            {user ? 'Sign Out' : 'Sync Google Calendar'}
+                            {user ? <Icons.Logout /> : <Icons.Login />} 
+                            {user ? 'Sign Out' : 'Sync Calendar'}
                         </button>
                     </aside>
 
                     {/* Main Workspace */}
-                    <main className="flex-grow flex flex-col overflow-hidden bg-slate-50 text-left">
+                    <main className="flex-grow flex flex-col overflow-hidden bg-slate-50">
                         <header className="bg-white border-b border-slate-200 px-10 py-8 flex items-center justify-between shadow-sm z-10 text-left">
-                            <div className="text-left">
-                                <h2 className="text-4xl font-black text-slate-800 tracking-tight text-left">{greeting}, Bounds</h2>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2 flex items-center gap-3 text-left">
+                            <div>
+                                <h2 className="text-4xl font-black text-slate-800 tracking-tight">{greeting}, Bounds</h2>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2 flex items-center gap-3">
                                     <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                                    Active Dashboard • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                                    Hub Dashboard • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
                                 </p>
                             </div>
                             <div className="flex items-center gap-10">
-                                <div className="text-right hidden md:block text-left">
-                                    <div className="text-3xl font-black text-slate-800 tracking-tighter leading-none text-right">
+                                <div className="text-right hidden md:block">
+                                    <div className="text-3xl font-black text-slate-800 tracking-tighter leading-none">
                                         {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 text-right">Local Time</div>
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Local Time</div>
                                 </div>
                                 <div className="flex -space-x-3">
                                     {FAMILY_MEMBERS.map((m, i) => (
-                                        <div key={m} title={m} className={`w-12 h-12 rounded-full border-[4px] border-white flex items-center justify-center text-[12px] font-black text-white shadow-xl ring-1 ring-slate-100 bg-indigo-${400 + (i*100)} text-left`}>
+                                        <div key={m} title={m} className={`w-12 h-12 rounded-full border-[4px] border-white flex items-center justify-center text-[12px] font-black text-white shadow-xl ring-1 ring-slate-100 bg-indigo-${400 + (i*100)}`}>
                                             {m[0]}
                                         </div>
                                     ))}
@@ -379,47 +329,47 @@
                             </div>
                         </header>
 
-                        <section className="flex-grow p-10 overflow-hidden flex flex-col gap-8 text-left">
+                        <section className="flex-grow p-10 overflow-hidden flex flex-col gap-8">
                             {!user ? (
-                                <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto text-left">
+                                <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
                                     <div className="w-28 h-28 bg-indigo-50 text-indigo-600 rounded-[3rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse mx-auto">
-                                        <Icon name="Calendar" size={48}/>
+                                        <Icons.Calendar />
                                     </div>
-                                    <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight mx-auto text-center">Sync Required</h3>
-                                    <p className="text-slate-500 mb-10 text-base font-medium leading-relaxed mx-auto text-center">Connect your family account to view shared schedules and events directly on this dashboard.</p>
-                                    <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold text-lg hover:bg-indigo-700 shadow-2xl shadow-indigo-100 transition-all active:scale-95 mx-auto text-center">Authorize Google Sync</button>
+                                    <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">Sync Required</h3>
+                                    <p className="text-slate-500 mb-10 text-base font-medium leading-relaxed">Connect your Google account to view family schedules and school runs.</p>
+                                    <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-12 py-5 rounded-[2rem] font-bold text-lg hover:bg-indigo-700 shadow-2xl transition-all active:scale-95">Authorize Sync</button>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-10 h-full overflow-hidden text-left">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-10 h-full overflow-hidden">
                                     {Object.entries(scheduleColumns).map(([key, events]) => (
-                                        <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow text-left">
-                                            <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between text-left">
-                                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-[13px] text-left">{key}</h3>
-                                                <span className="text-[12px] font-black bg-indigo-600 text-white px-4 py-1.5 rounded-full shadow-lg shadow-indigo-100 text-center">{events.length}</span>
+                                        <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="p-8 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
+                                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-[13px]">{key}</h3>
+                                                <span className="text-[12px] font-black bg-indigo-600 text-white px-4 py-1.5 rounded-full shadow-lg shadow-indigo-100">{events.length}</span>
                                             </div>
                                             <div className="flex-grow overflow-y-auto p-6 space-y-5 hide-scroll text-left">
                                                 {events.map(e => {
                                                     const person = e.assignedTo[0] || 'Family';
                                                     const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
                                                     return (
-                                                        <div key={e.id} className={`p-6 rounded-[2rem] border-l-[10px] shadow-sm transition-all hover:translate-x-1 text-left ${config.color}`}>
-                                                            <div className="flex items-center justify-between mb-4 text-left">
-                                                                <div className="flex items-center gap-2 font-bold text-[11px] opacity-70 uppercase tracking-widest text-left">
-                                                                    <Icon name="Clock" size={14} strokeWidth={3} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        <div key={e.id} className={`p-6 rounded-[2rem] border-l-[10px] shadow-sm transition-all hover:translate-x-1 ${config.color}`}>
+                                                            <div className="flex items-center justify-between mb-4">
+                                                                <div className="flex items-center gap-2 font-bold text-[11px] opacity-70 uppercase tracking-widest">
+                                                                    <Icons.Clock /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                 </div>
-                                                                <span className="text-[9px] font-black uppercase opacity-40 text-right">{e.calendarName}</span>
+                                                                <span className="text-[9px] font-black uppercase opacity-40">{e.calendarName}</span>
                                                             </div>
-                                                            <p className="text-base font-bold leading-snug mb-5 text-slate-800 text-left">{e.summary}</p>
-                                                            <div className="flex flex-wrap gap-2 text-left">
+                                                            <p className="text-base font-bold leading-snug mb-5 text-slate-800">{e.summary}</p>
+                                                            <div className="flex flex-wrap gap-2">
                                                                 {e.assignedTo.map(p => (
-                                                                    <span key={p} className={`px-3 py-1 rounded-full text-[10px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'} text-center`}>{p}</span>
+                                                                    <span key={p} className={`px-3 py-1 rounded-full text-[10px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>{p}</span>
                                                                 ))}
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
-                                                {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[12px] font-black tracking-[0.5em] opacity-40 flex flex-col items-center gap-5 text-center">
-                                                    <Icon name="CalendarDays" size={48} />
+                                                {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[12px] font-black tracking-[0.5em] opacity-40 flex flex-col items-center gap-5">
+                                                    <div className="rotate-12"><Icons.Calendar /></div>
                                                     No Events
                                                 </div>}
                                             </div>
