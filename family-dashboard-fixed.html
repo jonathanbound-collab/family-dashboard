@@ -50,8 +50,10 @@ const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
 const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
-const HOME_COORDS = { lat: 51.666, lon: -1.417 }; // Southmoor
-const SCHOOL_COORDS = { lat: 51.583, lon: -1.650 }; // Pinewood School
+
+// Updated precise coordinates
+const HOME_COORDS = { lat: 51.675361, lng: -1.430694 }; 
+const SCHOOL_COORDS = { lat: 51.583193, lng: -1.666909 };
 
 const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
 
@@ -164,7 +166,7 @@ const WeatherCard = () => {
   useEffect(() => {
     const fetchWeather = async () => {
       try {
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${HOME_COORDS.lat}&longitude=${HOME_COORDS.lon}&current_weather=true&daily=precipitation_probability_max&timezone=auto`);
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${HOME_COORDS.lat}&longitude=${HOME_COORDS.lng}&current_weather=true&daily=precipitation_probability_max&timezone=auto`);
         if (!res.ok) throw new Error();
         const json = await res.json();
         setData(json);
@@ -199,13 +201,13 @@ const TrafficMap = () => (
     <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 px-2 flex items-center gap-2">
       <Icons.Map /> School Run
     </h3>
-    <div className="bg-white p-2 rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+    <div className="bg-white p-2 rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden relative min-h-[350px]">
       <iframe 
         width="100%" 
         height="350" 
         frameBorder="0" 
         style={{ border: 0 }}
-        src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${HOME_COORDS.lat},${HOME_COORDS.lon}&destination=${SCHOOL_COORDS.lat},${SCHOOL_COORDS.lon}&mode=driving`}
+        src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${HOME_COORDS.lat},${HOME_COORDS.lng}&destination=${SCHOOL_COORDS.lat},${SCHOOL_COORDS.lng}&mode=driving`}
         allowFullScreen
       ></iframe>
     </div>
@@ -317,26 +319,26 @@ function App() {
   }, [events]);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col overflow-x-hidden text-slate-900">
       {/* Header */}
-      <header className="bg-white px-8 py-6 border-b flex justify-between items-center sticky top-0 z-50">
+      <header className="bg-white px-8 py-6 border-b flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div>
-          <h1 className="text-3xl font-black tracking-tighter text-slate-900">Hub Control</h1>
-          <p className="text-xs uppercase font-bold tracking-[0.2em] text-indigo-500 mt-1">
+          <h1 className="text-3xl font-black tracking-tighter text-slate-900 leading-none">Hub Control</h1>
+          <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-indigo-500 mt-2">
             {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} • {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
-        <div className="flex -space-x-3">
+        <div className="flex -space-x-2">
           {FAMILY_MEMBERS.map((m, i) => (
             <div key={m} title={m}
-              className={`w-10 h-10 rounded-full border-2 border-white text-white font-black flex items-center justify-center shadow-lg transform hover:-translate-y-1 transition-transform ${AVATAR_COLORS[i]}`}>
+              className={`w-10 h-10 rounded-full border-2 border-white text-white font-black flex items-center justify-center shadow-md transform hover:-translate-y-1 transition-transform cursor-default ${AVATAR_COLORS[i]}`}>
               {m[0]}
             </div>
           ))}
         </div>
       </header>
 
-      <main className="p-8 max-w-[1800px] mx-auto w-full">
+      <main className="p-8 max-w-[1900px] mx-auto w-full flex-grow">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
           {/* Sidebar Area: Weather, To-Do, Map */}
@@ -347,31 +349,36 @@ function App() {
           </div>
           
           {/* Main Content Area: Calendar */}
-          <div className="lg:col-span-3 bg-slate-200/50 p-6 rounded-[2.5rem]">
+          <div className="lg:col-span-3 bg-slate-200/50 p-6 rounded-[2.5rem] flex flex-col min-h-[850px]">
             {!user ? (
-              <div className="h-[700px] flex flex-col items-center justify-center text-center">
+              <div className="flex-grow flex flex-col items-center justify-center text-center py-20">
                 <div className="w-20 h-20 bg-white text-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-sm">
                    <Icons.Calendar />
                 </div>
                 <h2 className="text-xl font-black">Calendar Sync</h2>
                 <button
                   onClick={() => tokenClient?.requestAccessToken()}
-                  className="mt-6 bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold shadow-xl hover:bg-indigo-600 transition-colors">
+                  className="mt-6 bg-slate-900 text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-indigo-600 transition-all active:scale-95">
                   Authorize Google
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
                 {Object.entries(columns).map(([k, v]) => (
-                  <div key={k} className="flex flex-col h-[850px]">
-                    <h4 className="px-4 mb-4 font-black uppercase text-xs tracking-widest text-slate-500 flex justify-between">
-                      {k} <span>{v.length}</span>
+                  <div key={k} className="flex flex-col h-full min-h-[850px]">
+                    <h4 className="px-4 mb-4 font-black uppercase text-xs tracking-widest text-slate-500 flex justify-between items-center">
+                      {k} <span className="bg-white/50 px-2 py-0.5 rounded-md">{v.length}</span>
                     </h4>
                     <div className="flex-grow overflow-y-auto hide-scroll space-y-3">
                       {v.map(e => (
-                        <div key={e.id} className={`p-4 rounded-2xl border-l-8 bg-white shadow-sm ${MEMBER_CONFIG[e.assignedTo[0]]?.color || MEMBER_CONFIG.Family.color}`}>
-                          <p className="font-bold leading-tight">{e.summary}</p>
-                          <p className="text-[10px] mt-1 opacity-60 font-bold uppercase tracking-wider">
+                        <div key={e.id} className={`p-4 rounded-2xl border-l-8 bg-white shadow-sm hover:shadow-md transition-shadow ${MEMBER_CONFIG[e.assignedTo[0]]?.color || MEMBER_CONFIG.Family.color}`}>
+                          <p className="font-bold leading-tight text-slate-900">{e.summary}</p>
+                          <p className="text-[10px] mt-2 opacity-60 font-bold uppercase tracking-wider text-slate-500">
+                            {k !== 'Today' && (
+                              <span className="text-indigo-600">
+                                {e.start_date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} •{' '}
+                              </span>
+                            )}
                             {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                           <div className="flex flex-wrap gap-1 mt-3">
@@ -383,7 +390,11 @@ function App() {
                           </div>
                         </div>
                       ))}
-                      {v.length === 0 && <p className="text-center text-slate-400 text-sm mt-10">Clear schedule</p>}
+                      {v.length === 0 && (
+                        <div className="flex-grow flex items-center justify-center border-2 border-dashed border-slate-300 rounded-[2rem] text-slate-400 text-sm italic">
+                          Clear schedule
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
