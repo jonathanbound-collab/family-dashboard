@@ -1,350 +1,363 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  Calendar as CalendarIcon, Clock, LayoutDashboard,
-  LogIn, LogOut, RefreshCw, Sun, Battery, Droplets, 
-  CloudRain, Navigation, Zap, Map as MapIcon,
-  CheckSquare, Plus, Trash2, PlusCircle
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FamilyHub Dashboard</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for in-browser JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide-React UMD (Correct version for React components) -->
+    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.min.js"></script>
+    <style>
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        body { background-color: #f8fafc; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-// --- Configuration ---
-const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
-const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
-const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+        
+        // --- Configuration ---
+        const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
+        const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+        const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
 
-const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
-const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
-const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
+        const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
+        const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
+        const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
 
-const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
-const MEMBER_CONFIG = {
-  'Jonathan': { color: 'bg-blue-50 text-blue-800 border-blue-200', tag: 'bg-blue-600', variations: ['jonathan', 'jon'] },
-  'Alex': { color: 'bg-rose-50 text-rose-800 border-rose-200', tag: 'bg-rose-600', variations: ['alex', 'alexandra'] },
-  'Rufus': { color: 'bg-orange-50 text-orange-800 border-orange-200', tag: 'bg-orange-600', variations: ['rufus'] },
-  'Madeline': { color: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200', tag: 'bg-fuchsia-600', variations: ['madeline', 'maddie', 'maddy'] },
-  'Theo': { color: 'bg-indigo-50 text-indigo-800 border-indigo-200', tag: 'bg-indigo-600', variations: ['theo', 'theodore'] },
-  'Family': { color: 'bg-emerald-50 text-emerald-800 border-emerald-200', tag: 'bg-emerald-600', variations: [] }
-};
+        const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
+        const MEMBER_CONFIG = {
+            'Jonathan': { color: 'bg-blue-50 text-blue-800 border-blue-200', tag: 'bg-blue-600', variations: ['jonathan', 'jon'] },
+            'Alex': { color: 'bg-rose-50 text-rose-800 border-rose-200', tag: 'bg-rose-600', variations: ['alex', 'alexandra'] },
+            'Rufus': { color: 'bg-orange-50 text-orange-800 border-orange-200', tag: 'bg-orange-600', variations: ['rufus'] },
+            'Madeline': { color: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200', tag: 'bg-fuchsia-600', variations: ['madeline', 'maddie', 'maddy'] },
+            'Theo': { color: 'bg-indigo-50 text-indigo-800 border-indigo-200', tag: 'bg-indigo-600', variations: ['theo', 'theodore'] },
+            'Family': { color: 'bg-emerald-50 text-emerald-800 border-emerald-200', tag: 'bg-emerald-600', variations: [] }
+        };
 
-const App = () => {
-  const [allEvents, setAllEvents] = useState([]);
-  const [weather, setWeather] = useState(null);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [tokenClient, setTokenClient] = useState(null);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('family_tasks');
-    try {
-      return saved ? JSON.parse(saved) : [
-        { id: 1, text: 'Renew school bus passes', completed: false },
-        { id: 2, text: 'Order logs for burner', completed: true }
-      ];
-    } catch (e) { return []; }
-  });
-  const [newTaskText, setNewTaskText] = useState('');
+        // Icon Component Helper - Uses window.Lucide for the react-wrapped icons
+        const Icon = ({ name, size = 20, className = "", strokeWidth = 2 }) => {
+            const LucideIcon = window.Lucide ? window.Lucide[name] : null;
+            if (!LucideIcon) return null;
+            return <LucideIcon size={size} className={className} strokeWidth={strokeWidth} />;
+        };
 
-  // Update Clock
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+        const App = () => {
+            const [allEvents, setAllEvents] = useState([]);
+            const [weather, setWeather] = useState(null);
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [tokenClient, setTokenClient] = useState(null);
+            const [currentTime, setCurrentTime] = useState(new Date());
+            
+            const [tasks, setTasks] = useState(() => {
+                const saved = localStorage.getItem('family_tasks');
+                try {
+                    return saved ? JSON.parse(saved) : [
+                        { id: 1, text: 'Renew school bus passes', completed: false },
+                        { id: 2, text: 'Order logs for burner', completed: true }
+                    ];
+                } catch (e) { return []; }
+            });
+            const [newTaskText, setNewTaskText] = useState('');
 
-  // Persist Tasks
-  useEffect(() => {
-    localStorage.setItem('family_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
 
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .hide-scroll::-webkit-scrollbar { display: none; }
-      .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-      body { background-color: #f8fafc; }
-    `;
-    document.head.appendChild(style);
-  }, []);
+            useEffect(() => {
+                localStorage.setItem('family_tasks', JSON.stringify(tasks));
+            }, [tasks]);
 
-  const categorizeEvent = (event) => {
-    const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
-    const assigned = FAMILY_MEMBERS.filter(member => 
-      (MEMBER_CONFIG[member].variations).some(v => text.includes(v))
-    );
-    return assigned.length === 0 ? ['Family'] : assigned;
-  };
+            const categorizeEvent = (event) => {
+                const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
+                const assigned = FAMILY_MEMBERS.filter(member => 
+                    (MEMBER_CONFIG[member].variations).some(v => text.includes(v))
+                );
+                return assigned.length === 0 ? ['Family'] : assigned;
+            };
 
-  const fetchEvents = useCallback(async (token) => {
-    if (!window.gapi?.client?.calendar) return;
-    setLoading(true);
-    try {
-      window.gapi.client.setToken({ access_token: token });
-      const now = new Date();
-      now.setHours(0,0,0,0);
-      const timeMin = now.toISOString();
-      const timeMax = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)).toISOString();
+            const fetchEvents = useCallback(async (token) => {
+                if (!window.gapi?.client?.calendar) return;
+                setLoading(true);
+                try {
+                    window.gapi.client.setToken({ access_token: token });
+                    const now = new Date();
+                    now.setHours(0,0,0,0);
+                    const timeMin = now.toISOString();
+                    const timeMax = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)).toISOString();
 
-      let fetched = [];
-      const CAL_IDS = ['primary', 'jonathan.bound@gmail.com', 'family07456545553640322749@group.calendar.google.com'];
-      
-      for (const id of CAL_IDS) {
-        try {
-          const resp = await window.gapi.client.calendar.events.list({
-            calendarId: id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime'
-          });
-          const items = (resp.result.items || []).map(item => ({
-            ...item,
-            assignedTo: categorizeEvent(item),
-            calendarName: id.includes('family') ? 'Family' : 'Personal',
-            start_date: new Date(item.start.dateTime || item.start.date)
-          }));
-          fetched = [...fetched, ...items];
-        } catch (e) { console.error(`Calendar ${id} restricted`); }
-      }
-      setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
-    } catch (err) { console.error("Sync fail: Google API", err); }
-    finally { setLoading(false); }
-  }, []);
+                    let fetched = [];
+                    const CAL_IDS = ['primary', 'jonathan.bound@gmail.com', 'family07456545553640322749@group.calendar.google.com'];
+                    
+                    for (const id of CAL_IDS) {
+                        try {
+                            const resp = await window.gapi.client.calendar.events.list({
+                                calendarId: id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime'
+                            });
+                            const items = (resp.result.items || []).map(item => ({
+                                ...item,
+                                assignedTo: categorizeEvent(item),
+                                calendarName: id.includes('family') ? 'Family' : 'Personal',
+                                start_date: new Date(item.start.dateTime || item.start.date)
+                            }));
+                            fetched = [...fetched, ...items];
+                        } catch (e) { console.error(`Calendar ${id} restricted`); }
+                    }
+                    setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
+                } catch (err) { console.error("Sync fail: Google API", err); }
+                finally { setLoading(false); }
+            }, []);
 
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://apis.google.com/js/api.js";
-    script.onload = () => {
-      window.gapi.load('client', async () => {
-        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] });
-        if (window.location.hash.includes('access_token')) {
-          const t = new URLSearchParams(window.location.hash.substring(1)).get('access_token');
-          setUser({ token: t });
-          fetchEvents(t);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      });
-    };
-    document.body.appendChild(script);
+            useEffect(() => {
+                const script = document.createElement('script');
+                script.src = "https://apis.google.com/js/api.js";
+                script.onload = () => {
+                    window.gapi.load('client', async () => {
+                        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] });
+                        if (window.location.hash.includes('access_token')) {
+                            const t = new URLSearchParams(window.location.hash.substring(1)).get('access_token');
+                            setUser({ token: t });
+                            fetchEvents(t);
+                            window.history.replaceState({}, document.title, window.location.pathname);
+                        }
+                    });
+                };
+                document.body.appendChild(script);
 
-    const gis = document.createElement('script');
-    gis.src = "https://accounts.google.com/gsi/client";
-    gis.onload = () => {
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID, scope: SCOPES, ux_mode: 'redirect',
-        redirect_uri: window.location.origin + window.location.pathname,
-      });
-      setTokenClient(client);
-    };
-    document.body.appendChild(gis);
+                const gis = document.createElement('script');
+                gis.src = "https://accounts.google.com/gsi/client";
+                gis.onload = () => {
+                    const client = window.google.accounts.oauth2.initTokenClient({
+                        client_id: CLIENT_ID, scope: SCOPES, ux_mode: 'redirect',
+                        redirect_uri: window.location.origin + window.location.pathname,
+                    });
+                    setTokenClient(client);
+                };
+                document.body.appendChild(gis);
 
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=51.67&longitude=-1.41&current=temperature_2m,weathercode&daily=precipitation_probability_max&timezone=Europe/London')
-      .then(r => r.json()).then(d => setWeather({ 
-        temp: Math.round(d.current.temperature_2m), 
-        rain: d.daily.precipitation_probability_max[0] 
-      })).catch(err => console.error("Weather check failed", err));
-  }, [fetchEvents]); 
+                fetch('https://api.open-meteo.com/v1/forecast?latitude=51.67&longitude=-1.41&current=temperature_2m,weathercode&daily=precipitation_probability_max&timezone=Europe/London')
+                    .then(r => r.json()).then(d => setWeather({ 
+                        temp: Math.round(d.current.temperature_2m), 
+                        rain: d.daily.precipitation_probability_max[0] 
+                    })).catch(err => console.error("Weather check failed", err));
+            }, [fetchEvents]); 
 
-  const addTask = () => {
-    if (!newTaskText.trim()) return;
-    setTasks([...tasks, { id: Date.now(), text: newTaskText, completed: false }]);
-    setNewTaskText('');
-  };
+            const addTask = () => {
+                if (!newTaskText.trim()) return;
+                setTasks([...tasks, { id: Date.now(), text: newTaskText, completed: false }]);
+                setNewTaskText('');
+            };
 
-  const toggleTask = (id) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
+            const toggleTask = (id) => {
+                setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+            };
 
-  const removeTask = (id) => {
-    setTasks(tasks.filter(t => t.id !== id));
-  };
+            const removeTask = (id) => {
+                setTasks(tasks.filter(t => t.id !== id));
+            };
 
-  const scheduleColumns = useMemo(() => {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
-    return {
-      'Today': allEvents.filter(e => e.start_date.toDateString() === today.toDateString()),
-      'This Week': allEvents.filter(e => e.start_date >= today && e.start_date < nextWeek),
-      'This Month': allEvents.filter(e => e.start_date.getMonth() === today.getMonth())
-    };
-  }, [allEvents]);
+            const scheduleColumns = useMemo(() => {
+                const today = new Date(); today.setHours(0,0,0,0);
+                const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+                return {
+                    'Today': allEvents.filter(e => e.start_date.toDateString() === today.toDateString()),
+                    'This Week': allEvents.filter(e => e.start_date >= today && e.start_date < nextWeek),
+                    'This Month': allEvents.filter(e => e.start_date.getMonth() === today.getMonth())
+                };
+            }, [allEvents]);
 
-  const greeting = useMemo(() => {
-    const hour = currentTime.getHours();
-    if (hour < 12) return "Good Morning";
-    if (hour < 18) return "Good Afternoon";
-    return "Good Evening";
-  }, [currentTime]);
+            const greeting = useMemo(() => {
+                const hour = currentTime.getHours();
+                if (hour < 12) return "Good Morning";
+                if (hour < 18) return "Good Afternoon";
+                return "Good Evening";
+            }, [currentTime]);
 
-  return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left">
-      {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col items-start hidden lg:flex shadow-sm z-20 overflow-y-auto hide-scroll">
-        <div className="flex items-center gap-4 mb-8 w-full">
-          <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100 flex-shrink-0">
-            <LayoutDashboard size={22} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">FamilyHub</h1>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Southmoor</p>
-          </div>
-        </div>
-
-        <div className="space-y-6 w-full">
-          {/* Weather Section */}
-          {weather && (
-            <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm w-full">
-              <div className="text-left">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weather</span>
-                <div className="text-3xl font-black text-slate-800 mt-1 tracking-tighter">{weather.temp}°C</div>
-              </div>
-              <div className="text-right">
-                <div className="text-blue-500 flex items-center gap-1.5 justify-end font-bold text-sm">
-                  <CloudRain size={16} strokeWidth={3} />
-                  <span>{weather.rain}%</span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Rain Chance</span>
-              </div>
-            </div>
-          )}
-
-          {/* Task List */}
-          <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm w-full text-left">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shared To-Do</span>
-              <CheckSquare size={14} className="text-emerald-500" />
-            </div>
-            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto hide-scroll">
-              {tasks.map(task => (
-                <div key={task.id} className="flex items-center gap-3 group">
-                  <button 
-                    onClick={() => toggleTask(task.id)}
-                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
-                  >
-                    {task.completed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                  </button>
-                  <span className={`text-xs flex-grow truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
-                    {task.text}
-                  </span>
-                  <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all flex-shrink-0">
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="relative">
-              <input 
-                type="text" 
-                value={newTaskText}
-                onChange={(e) => setNewTaskText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addTask()}
-                placeholder="Add task..."
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-              />
-              <button onClick={addTask} className="absolute right-2 top-1.5 text-indigo-500 hover:text-indigo-700">
-                <PlusCircle size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* School Run Section - Restored Visuals */}
-          <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden w-full text-left">
-            <div className="flex items-center justify-between mb-4 w-full">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">School Run</span>
-              <Navigation size={14} className="text-indigo-500" />
-            </div>
-            <div className="h-80 rounded-2xl bg-slate-200 overflow-hidden shadow-inner ring-1 ring-slate-100">
-              <iframe 
-                className="w-full h-full border-0" 
-                src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
-                allowFullScreen 
-              />
-            </div>
-          </div>
-        </div>
-
-        <button 
-          onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
-          className="mt-auto w-full flex items-center justify-center gap-3 p-4 rounded-2xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all"
-        >
-          {user ? <LogOut size={16}/> : <LogIn size={16}/>} 
-          {user ? 'Sign Out' : 'Sync Google'}
-        </button>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-grow flex flex-col overflow-hidden bg-slate-50">
-        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10">
-          <div className="text-left">
-            <h2 className="text-3xl font-black text-slate-800 tracking-tight">{greeting}, Bounds</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
-               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-               Hub Control • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
-          </div>
-          <div className="flex items-center gap-8">
-            <div className="text-right hidden md:block">
-               <div className="text-2xl font-black text-slate-800 tracking-tighter leading-none">
-                 {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-               </div>
-               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Local Time</div>
-            </div>
-            <div className="flex -space-x-2.5">
-              {FAMILY_MEMBERS.map((m, i) => (
-                <div key={m} title={m} className={`w-10 h-10 rounded-full border-4 border-white flex items-center justify-center text-[10px] font-black text-white shadow-md ring-1 ring-slate-100 bg-indigo-${400 + (i*100)}`}>
-                  {m[0]}
-                </div>
-              ))}
-            </div>
-          </div>
-        </header>
-
-        <section className="flex-grow p-8 overflow-hidden flex flex-col gap-6">
-          {!user ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
-              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse">
-                <CalendarIcon size={40}/>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Sync Calendars</h3>
-              <p className="text-slate-500 mb-10 text-sm font-medium leading-relaxed">Connect your Google account to view shared family schedules and school runs.</p>
-              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95">Authorize Access</button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full overflow-hidden">
-              {Object.entries(scheduleColumns).map(([key, events]) => (
-                <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
-                    <h3 className="font-black text-slate-800 uppercase tracking-widest text-[11px]">{key}</h3>
-                    <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full shadow-lg shadow-indigo-100">{events.length}</span>
-                  </div>
-                  <div className="flex-grow overflow-y-auto p-5 space-y-4 hide-scroll text-left">
-                    {events.map(e => {
-                      const person = e.assignedTo[0] || 'Family';
-                      const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
-                      return (
-                        <div key={e.id} className={`p-5 rounded-2xl border-l-[8px] shadow-sm transition-all hover:translate-x-1 text-left ${config.color}`}>
-                          <div className="flex items-center justify-between mb-3 text-left">
-                             <div className="flex items-center gap-1.5 font-bold text-[10px] opacity-70 uppercase tracking-tighter text-left">
-                                <Clock size={12} strokeWidth={3} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                             </div>
-                             <span className="text-[8px] font-black uppercase opacity-40">{e.calendarName}</span>
-                          </div>
-                          <p className="text-sm font-bold leading-tight mb-4 text-slate-800 text-left">{e.summary}</p>
-                          <div className="flex flex-wrap gap-1.5 text-left">
-                            {e.assignedTo.map(p => (
-                              <span key={p} className={`px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>{p}</span>
-                            ))}
-                          </div>
+            return (
+                <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans text-left">
+                    <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col items-start hidden lg:flex shadow-sm z-20 overflow-y-auto hide-scroll">
+                        <div className="flex items-center gap-4 mb-8 w-full">
+                            <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100 flex-shrink-0">
+                                <Icon name="LayoutDashboard" size={22} />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold tracking-tight text-slate-800">FamilyHub</h1>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Southmoor</p>
+                            </div>
                         </div>
-                      );
-                    })}
-                    {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-black tracking-[0.4em] opacity-40 flex flex-col items-center gap-3">
-                      <MapIcon size={32} />
-                      Clear Schedule
-                    </div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
-};
 
-export default App;
+                        <div className="space-y-6 w-full">
+                            {weather && (
+                                <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm w-full">
+                                    <div className="text-left">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weather</span>
+                                        <div className="text-3xl font-black text-slate-800 mt-1 tracking-tighter">{weather.temp}°C</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-blue-500 flex items-center gap-1.5 justify-end font-bold text-sm">
+                                            <Icon name="CloudRain" size={16} strokeWidth={3} />
+                                            <span>{weather.rain}%</span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Rain Chance</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm w-full text-left">
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shared To-Do</span>
+                                    <Icon name="CheckSquare" size={14} className="text-emerald-500" />
+                                </div>
+                                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto hide-scroll">
+                                    {tasks.map(task => (
+                                        <div key={task.id} className="flex items-center gap-3 group">
+                                            <button 
+                                                onClick={() => toggleTask(task.id)}
+                                                className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
+                                            >
+                                                {task.completed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                            </button>
+                                            <span className={`text-xs flex-grow truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
+                                                {task.text}
+                                            </span>
+                                            <button onClick={() => removeTask(task.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all flex-shrink-0">
+                                                <Icon name="Trash2" size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        value={newTaskText}
+                                        onChange={(e) => setNewTaskText(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                                        placeholder="Add task..."
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                                    />
+                                    <button onClick={addTask} className="absolute right-2 top-1.5 text-indigo-500 hover:text-indigo-700">
+                                        <Icon name="PlusCircle" size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden w-full text-left">
+                                <div className="flex items-center justify-between mb-4 w-full">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">School Run</span>
+                                    <Icon name="Navigation" size={14} className="text-indigo-500" />
+                                </div>
+                                <div className="h-80 rounded-2xl bg-slate-200 overflow-hidden shadow-inner ring-1 ring-slate-100">
+                                    <iframe 
+                                        className="w-full h-full border-0" 
+                                        src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} 
+                                        allowFullScreen 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
+                            className="mt-auto w-full flex items-center justify-center gap-3 p-4 rounded-2xl text-sm font-bold bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 transition-all"
+                        >
+                            {user ? <Icon name="LogOut" size={16}/> : <Icon name="LogIn" size={16}/>} 
+                            {user ? 'Sign Out' : 'Sync Google'}
+                        </button>
+                    </aside>
+
+                    <main className="flex-grow flex flex-col overflow-hidden bg-slate-50">
+                        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10">
+                            <div className="text-left">
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tight">{greeting}, Bounds</h2>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                    Hub Control • {currentTime.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-8">
+                                <div className="text-right hidden md:block">
+                                    <div className="text-2xl font-black text-slate-800 tracking-tighter leading-none">
+                                        {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Local Time</div>
+                                </div>
+                                <div className="flex -space-x-2.5">
+                                    {FAMILY_MEMBERS.map((m, i) => (
+                                        <div key={m} title={m} className={`w-10 h-10 rounded-full border-4 border-white flex items-center justify-center text-[10px] font-black text-white shadow-md ring-1 ring-slate-100 bg-indigo-${400 + (i*100)}`}>
+                                            {m[0]}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </header>
+
+                        <section className="flex-grow p-8 overflow-hidden flex flex-col gap-6">
+                            {!user ? (
+                                <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
+                                    <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100 animate-pulse">
+                                        <Icon name="Calendar" size={40}/>
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Sync Calendars</h3>
+                                    <p className="text-slate-500 mb-10 text-sm font-medium leading-relaxed">Connect your Google account to view shared family schedules and school runs.</p>
+                                    <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95">Authorize Access</button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full overflow-hidden">
+                                    {Object.entries(scheduleColumns).map(([key, events]) => (
+                                        <div key={key} className="flex flex-col h-full bg-white rounded-[2.5rem] border border-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
+                                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-[11px]">{key}</h3>
+                                                <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full shadow-lg shadow-indigo-100">{events.length}</span>
+                                            </div>
+                                            <div className="flex-grow overflow-y-auto p-5 space-y-4 hide-scroll text-left">
+                                                {events.map(e => {
+                                                    const person = e.assignedTo[0] || 'Family';
+                                                    const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
+                                                    return (
+                                                        <div key={e.id} className={`p-5 rounded-2xl border-l-[8px] shadow-sm transition-all hover:translate-x-1 text-left ${config.color}`}>
+                                                            <div className="flex items-center justify-between mb-3 text-left">
+                                                                <div className="flex items-center gap-1.5 font-bold text-[10px] opacity-70 uppercase tracking-tighter text-left">
+                                                                    <Icon name="Clock" size={12} strokeWidth={3} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                </div>
+                                                                <span className="text-[8px] font-black uppercase opacity-40">{e.calendarName}</span>
+                                                            </div>
+                                                            <p className="text-sm font-bold leading-tight mb-4 text-slate-800 text-left">{e.summary}</p>
+                                                            <div className="flex flex-wrap gap-1.5 text-left">
+                                                                {e.assignedTo.map(p => (
+                                                                    <span key={p} className={`px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase shadow-sm ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>{p}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {events.length === 0 && <div className="py-24 text-center text-slate-300 uppercase text-[10px] font-black tracking-[0.4em] opacity-40 flex flex-col items-center gap-3">
+                                                    <Icon name="Map" size={32} />
+                                                    Clear Schedule
+                                                </div>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
