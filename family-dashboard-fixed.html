@@ -30,17 +30,30 @@
             </nav>
 
             <div class="mt-auto space-y-3">
+                <!-- Weather Module -->
                 <div id="weather-box" class="p-4 bg-slate-50 rounded-2xl border border-slate-100 hidden">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Oxfordshire</div>
                     <div id="temp-display" class="text-2xl font-bold text-slate-800">--°C</div>
                     <div id="range-display" class="text-[10px] font-medium text-slate-500">H: --° L: --°</div>
                 </div>
 
+                <!-- Traffic Module -->
                 <div id="traffic-box" class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">School Run</div>
-                    <div id="traffic-time" class="text-xl font-bold text-slate-800">-- mins</div>
-                    <div id="traffic-status" class="text-[10px] font-bold uppercase tracking-tight mt-1">Checking...</div>
-                    <div class="text-[9px] text-slate-400 mt-1">Route: Home → School</div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">School Run</span>
+                        <span id="traffic-time" class="text-lg font-bold text-slate-800">-- mins</span>
+                    </div>
+                    
+                    <!-- Map Embed -->
+                    <div id="map-container" class="w-full h-40 rounded-xl bg-slate-200 overflow-hidden mb-2 relative shadow-inner border border-slate-100">
+                        <div id="map-placeholder" class="absolute inset-0 flex items-center justify-center text-[10px] text-slate-400 text-center p-2">
+                            Loading Route...
+                        </div>
+                        <iframe id="map-iframe" class="w-full h-full border-0 hidden" loading="lazy" allowfullscreen src=""></iframe>
+                    </div>
+
+                    <div id="traffic-status" class="text-[10px] font-bold uppercase tracking-tight">Updating...</div>
+                    <div class="text-[9px] text-slate-400 mt-0.5">Route: Home → School</div>
                 </div>
 
                 <button id="auth-btn" onclick="handleAuthAction()" class="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl text-sm font-bold transition-all bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700">
@@ -92,9 +105,17 @@
     </div>
 
     <script>
+        // --- Configuration ---
         const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
         const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
         
+        // 1. PASTE YOUR GOOGLE MAPS API KEY HERE
+        const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
+        
+        // 2. UPDATE THESE ADDRESSES
+        const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
+        const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
+
         const CALENDAR_IDS = [
             'primary',
             'jonathan.bound@gmail.com',
@@ -270,18 +291,90 @@
             } else {
                 logDebug("Constructing Direct OAuth Redirect...");
                 const currentUri = window.location.origin + window.location.pathname;
-                
-                // Construct the OAuth URL manually to bypass library stalls
                 const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
                     `client_id=${CLIENT_ID}&` +
                     `redirect_uri=${encodeURIComponent(currentUri)}&` +
                     `response_type=token&` +
                     `scope=${encodeURIComponent(SCOPES)}&` +
                     `prompt=select_account`;
-                
                 logDebug("Navigating to Google...");
                 window.location.assign(authUrl);
             }
+        }
+
+        /**
+         * Fetches real-time traffic using the Google Maps JS SDK to bypass CORS.
+         */
+        function updateTraffic() {
+            if (!MAPS_API_KEY) {
+                logDebug("Maps API Key missing. Using estimates.", true);
+                runFallbackTraffic();
+                return;
+            }
+
+            // 1. Update visual Map Embed
+            const iframe = document.getElementById('map-iframe');
+            const placeholder = document.getElementById('map-placeholder');
+            const embedUrl = `https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`;
+            
+            iframe.src = embedUrl;
+            iframe.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+
+            // 2. Fetch live numeric data using Distance Matrix SDK
+            const service = new google.maps.DistanceMatrixService();
+            service.getDistanceMatrix(
+                {
+                    origins: [HOME_ADDRESS],
+                    destinations: [SCHOOL_ADDRESS],
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    drivingOptions: {
+                        departureTime: new Date(),
+                        trafficModel: google.maps.TrafficModel.BEST_GUESS
+                    },
+                    unitSystem: google.maps.UnitSystem.METRIC,
+                },
+                (response, status) => {
+                    if (status !== "OK") {
+                        logDebug("Traffic API Error: " + status, true);
+                        runFallbackTraffic();
+                        return;
+                    }
+
+                    const result = response.rows[0].elements[0];
+                    if (result.status === "OK") {
+                        const duration = result.duration_in_traffic ? result.duration_in_traffic.text : result.duration.text;
+                        document.getElementById('traffic-time').innerText = duration;
+                        
+                        // Compare traffic vs base time to set status color
+                        const baseSecs = result.duration.value;
+                        const trafficSecs = result.duration_in_traffic ? result.duration_in_traffic.value : baseSecs;
+                        
+                        const statusEl = document.getElementById('traffic-status');
+                        if (trafficSecs > baseSecs * 1.3) {
+                            statusEl.innerText = "Heavy Traffic";
+                            statusEl.className = "text-[10px] font-bold uppercase tracking-tight text-rose-500";
+                        } else if (trafficSecs > baseSecs * 1.1) {
+                            statusEl.innerText = "Moderate Traffic";
+                            statusEl.className = "text-[10px] font-bold uppercase tracking-tight text-amber-500";
+                        } else {
+                            statusEl.innerText = "Clear Roads";
+                            statusEl.className = "text-[10px] font-bold uppercase tracking-tight text-emerald-500";
+                        }
+                    }
+                }
+            );
+        }
+
+        function runFallbackTraffic() {
+            const h = new Date().getHours();
+            let d = 15, s = 'Est. Clear', c = 'text-emerald-500';
+            if (h >= 7 && h <= 9) { d = 26; s = 'Est. Moderate'; c = 'text-amber-500'; }
+            else if (h >= 15 && h <= 17) { d = 32; s = 'Est. Heavy'; c = 'text-rose-500'; }
+            document.getElementById('traffic-time').innerText = `${d} mins`;
+            const statusEl = document.getElementById('traffic-status');
+            statusEl.innerText = s;
+            statusEl.className = `text-[10px] font-bold uppercase tracking-tight ${c}`;
         }
 
         window.onload = () => {
@@ -300,30 +393,27 @@
                     document.getElementById('range-display').innerText = `H: ${Math.round(data.daily.temperature_2m_max[0])}° L: ${Math.round(data.daily.temperature_2m_min[0])}°`;
                 });
 
-            // Traffic Logic
-            const h = new Date().getHours();
-            let d = 15, s = 'Clear roads', c = 'text-emerald-500';
-            if (h >= 7 && h <= 9) { d = 26; s = 'Moderate traffic'; c = 'text-amber-500'; }
-            else if (h >= 15 && h <= 17) { d = 32; s = 'Heavy traffic'; c = 'text-rose-500'; }
-            document.getElementById('traffic-time').innerText = `${d} mins`;
-            document.getElementById('traffic-status').innerText = s;
-            document.getElementById('traffic-status').className = `text-[10px] font-bold uppercase tracking-tight mt-1 ${c}`;
+            // Dynamically load Google Maps JS Library
+            if (MAPS_API_KEY) {
+                const mapsScript = document.createElement('script');
+                mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_API_KEY}&libraries=places&callback=updateTraffic`;
+                mapsScript.async = true;
+                mapsScript.defer = true;
+                document.head.appendChild(mapsScript);
+            } else {
+                updateTraffic(); // Runs fallback
+            }
 
-            // Handle return from OAuth redirect immediately
             const hash = window.location.hash;
             if (hash.includes('access_token')) {
-                logDebug("OAuth Token detected in URL. Finalizing session...");
+                logDebug("OAuth Token detected. Finalizing session...");
                 const params = new URLSearchParams(hash.substring(1));
                 const token = params.get('access_token');
-                
-                // Clear the hash for a clean URL
                 window.history.replaceState({}, document.title, window.location.pathname);
-                
                 fetchEvents(token);
             } else {
-                logDebug("System Ready. Click 'Connect Google' to begin.");
                 const currentUri = window.location.origin + window.location.pathname;
-                logDebug(`Whitelist this URI: ${currentUri}`);
+                logDebug(`System Ready.`);
             }
         };
     </script>
