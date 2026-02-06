@@ -1,0 +1,359 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+  Calendar as CalendarIcon, Clock, LayoutDashboard,
+  LogIn, LogOut, RefreshCw, Sun, Battery, Droplets, 
+  CloudRain, Navigation, AlertCircle
+} from 'lucide-react';
+
+// --- Configuration ---
+const CLIENT_ID = '123608984638-af4v7ira3qae7ftbbi10dhvd7hbgotsb.apps.googleusercontent.com';
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
+
+// Reliable Proxies
+const GET_PROXY = 'https://api.allorigins.win/get?url='; 
+const POST_PROXY = 'https://corsproxy.io/?'; 
+
+const MAPS_API_KEY = 'AIzaSyAQKZpqJfl4Y9yQtCKGa1dl0ItW_15SrG0'; 
+const HOME_ADDRESS = 'Wood Lane, Southmoor, Oxfordshire';
+const SCHOOL_ADDRESS = 'Pinewood School, Bourton, Wiltshire';
+
+// --- Smart Home Credentials ---
+const MIXERGY_USER = 'jonathan.bound@gmail.com'; 
+const MIXERGY_PASS = 'sQWEas1WOODLANE'; 
+const SOLAREDGE_SITE_ID = '2616645'; 
+const SOLAREDGE_API_KEY = 'BV7EJBCK53037E26DYIZSEWFCYJGI1FG'; 
+
+const FAMILY_MEMBERS = ['Jonathan', 'Alex', 'Rufus', 'Madeline', 'Theo'];
+const MEMBER_CONFIG = {
+  'Jonathan': { color: 'bg-blue-50 text-blue-800 border-blue-200', tag: 'bg-blue-600', variations: ['jonathan', 'jon'] },
+  'Alex': { color: 'bg-rose-50 text-rose-800 border-rose-200', tag: 'bg-rose-600', variations: ['alex', 'alexandra'] },
+  'Rufus': { color: 'bg-orange-50 text-orange-800 border-orange-200', tag: 'bg-orange-600', variations: ['rufus'] },
+  'Madeline': { color: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200', tag: 'bg-fuchsia-600', variations: ['madeline', 'maddie', 'maddy'] },
+  'Theo': { color: 'bg-indigo-50 text-indigo-800 border-indigo-200', tag: 'bg-indigo-600', variations: ['theo', 'theodore'] },
+  'Family': { color: 'bg-emerald-50 text-emerald-800 border-emerald-200', tag: 'bg-emerald-600', variations: [] }
+};
+
+const App = () => {
+  const [allEvents, setAllEvents] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [smartHome, setSmartHome] = useState({ solar: 0, battery: 0, water: 0, waterTemp: 0, isLive: false });
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [tokenClient, setTokenClient] = useState(null);
+  const [mixergyToken, setMixergyToken] = useState(null);
+  const [logs, setLogs] = useState([]);
+
+  const addLog = (msg, isError = false) => {
+    setLogs(prev => [`${new Date().toLocaleTimeString()} > ${msg}`, ...prev].slice(0, 15));
+  };
+
+  // --- Calendar Logic ---
+  const categorizeEvent = (event) => {
+    const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
+    const assigned = FAMILY_MEMBERS.filter(member => 
+      (MEMBER_CONFIG[member].variations).some(v => text.includes(v))
+    );
+    return assigned.length === 0 ? ['Family'] : assigned;
+  };
+
+  const fetchEvents = useCallback(async (token) => {
+    if (!window.gapi?.client?.calendar) return;
+    setLoading(true);
+    try {
+      window.gapi.client.setToken({ access_token: token });
+      const now = new Date();
+      now.setHours(0,0,0,0);
+      const timeMin = now.toISOString();
+      const timeMax = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)).toISOString();
+
+      let fetched = [];
+      const CAL_IDS = ['primary', 'jonathan.bound@gmail.com', 'family07456545553640322749@group.calendar.google.com'];
+      
+      for (const id of CAL_IDS) {
+        try {
+          const resp = await window.gapi.client.calendar.events.list({
+            calendarId: id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime'
+          });
+          const items = (resp.result.items || []).map(item => ({
+            ...item,
+            assignedTo: categorizeEvent(item),
+            calendarName: id.includes('family') ? 'Family' : 'Personal',
+            start_date: new Date(item.start.dateTime || item.start.date)
+          }));
+          fetched = [...fetched, ...items];
+        } catch (e) { addLog(`Calendar ${id} restricted`, true); }
+      }
+      setAllEvents(fetched.sort((a, b) => a.start_date - b.start_date));
+      addLog("Calendar synced.");
+    } catch (err) { addLog("Calendar sync failed", true); }
+    finally { setLoading(false); }
+  }, []);
+
+  // --- Smart Home Integration ---
+  const updateSmartHome = useCallback(async () => {
+    addLog("Updating Energy Data...");
+    let solarResults = { solar: 0, battery: 0, live: false };
+    let waterResults = { water: 0, temp: 0, live: false };
+
+    // 1. SolarEdge Fetch (GET via AllOrigins)
+    try {
+      const seUrl = `https://monitoringapi.solaredge.com/site/${SOLAREDGE_SITE_ID}/currentPowerFlow?api_key=${SOLAREDGE_API_KEY}`;
+      const seResp = await fetch(`${GET_PROXY}${encodeURIComponent(seUrl)}`);
+      const seProxy = await seResp.json();
+      const seData = JSON.parse(seProxy.contents);
+      
+      if (seData.siteCurrentPowerFlow) {
+        const flow = seData.siteCurrentPowerFlow;
+        solarResults.solar = flow.PV?.currentPower || 0;
+        solarResults.battery = flow.STORAGE?.chargeLevel || 0;
+        solarResults.live = true;
+        addLog(`SolarEdge: ${solarResults.solar}kW Active`);
+      }
+    } catch (e) { addLog("SolarEdge: Network or API error", true); }
+
+    // 2. Mixergy Fetch (POST for Auth, GET for Data)
+    try {
+      let mToken = mixergyToken;
+      if (!mToken) {
+        const loginUrl = 'https://www.mixergy.io/api/v2/auth/login';
+        const loginResp = await fetch(`${POST_PROXY}${encodeURIComponent(loginUrl)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: MIXERGY_USER, password: MIXERGY_PASS })
+        });
+        const loginData = await loginResp.json();
+        mToken = loginData.token;
+        setMixergyToken(mToken);
+      }
+
+      if (mToken) {
+        const tankUrl = `https://www.mixergy.io/api/v2/tanks`;
+        const tankResp = await fetch(`${GET_PROXY}${encodeURIComponent(tankUrl)}`, {
+          headers: { 'Authorization': `Bearer ${mToken}` }
+        });
+        const tankProxy = await tankResp.json();
+        const tanks = JSON.parse(tankProxy.contents);
+        
+        if (tanks && tanks[0]) {
+          waterResults.water = Math.round(tanks[0].charge || 0);
+          waterResults.temp = Math.round(tanks[0].latest_measurement?.top_temperature || 0);
+          waterResults.live = true;
+          addLog(`Mixergy: ${waterResults.water}% Charge`);
+        }
+      }
+    } catch (e) { 
+      setMixergyToken(null); // Force re-login next cycle
+      addLog("Mixergy: Auth or Proxy error", true); 
+    }
+
+    setSmartHome({
+      solar: solarResults.solar,
+      battery: solarResults.battery,
+      water: waterResults.water,
+      waterTemp: waterResults.temp,
+      isLive: solarResults.live || waterResults.live
+    });
+  }, [mixergyToken]);
+
+  // --- Initialization ---
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://apis.google.com/js/api.js";
+    script.onload = () => {
+      window.gapi.load('client', async () => {
+        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] });
+        if (window.location.hash.includes('access_token')) {
+          const t = new URLSearchParams(window.location.hash.substring(1)).get('access_token');
+          setUser({ token: t });
+          fetchEvents(t);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      });
+    };
+    document.body.appendChild(script);
+
+    const gis = document.createElement('script');
+    gis.src = "https://accounts.google.com/gsi/client";
+    gis.onload = () => {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID, scope: SCOPES, ux_mode: 'redirect',
+        redirect_uri: window.location.origin + window.location.pathname,
+      });
+      setTokenClient(client);
+    };
+    document.body.appendChild(gis);
+
+    // Weather
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=51.67&longitude=-1.41&current=temperature_2m,weathercode&daily=precipitation_probability_max&timezone=Europe/London')
+      .then(r => r.json()).then(d => setWeather({ temp: Math.round(d.current.temperature_2m), rain: d.daily.precipitation_probability_max[0] }));
+    
+    updateSmartHome();
+    const interval = setInterval(updateSmartHome, 300000); 
+    return () => clearInterval(interval);
+  }, [fetchEvents, updateSmartHome]);
+
+  const scheduleColumns = useMemo(() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+    return {
+      today: allEvents.filter(e => e.start_date.toDateString() === today.toDateString()),
+      week: allEvents.filter(e => e.start_date >= today && e.start_date < nextWeek),
+      month: allEvents.filter(e => e.start_date.getMonth() === today.getMonth())
+    };
+  }, [allEvents]);
+
+  return (
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      {/* Sidebar */}
+      <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col hidden lg:flex shadow-sm text-center">
+        <div className="flex items-center gap-3 mb-8 justify-center">
+          <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-100"><LayoutDashboard size={20} /></div>
+          <h1 className="text-xl font-bold tracking-tight">FamilyHub</h1>
+        </div>
+
+        <div className="flex-grow space-y-5 overflow-y-auto hide-scroll pb-4">
+          {/* Smart Home Card */}
+          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Smart Home</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${smartHome.isLive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                {smartHome.isLive ? 'Connected' : 'Offline'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="text-center">
+                <Sun size={16} className="mx-auto text-amber-500 mb-1" />
+                <div className="text-xs font-bold">{smartHome.solar}kW</div>
+              </div>
+              <div className="text-center">
+                <Battery size={16} className="mx-auto text-emerald-500 mb-1" />
+                <div className="text-xs font-bold">{smartHome.battery}%</div>
+              </div>
+              <div className="text-center">
+                <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
+                <div className="text-xs font-bold">{smartHome.water}%</div>
+              </div>
+            </div>
+            <div className="space-y-3 pt-2 border-t border-slate-200/50">
+              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${smartHome.battery}%` }} />
+              </div>
+              <div className="flex justify-between items-center text-[10px] text-slate-500 font-medium">
+                <span>Hot Water Tank</span>
+                <span className="font-bold text-slate-700">{smartHome.waterTemp}°C</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Weather Card */}
+          {weather && (
+            <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm">
+              <div className="text-left">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Oxfordshire</span>
+                <div className="text-3xl font-bold mt-1">{weather.temp}°C</div>
+              </div>
+              <div className="text-right">
+                <div className="text-blue-500 flex items-center gap-1 justify-end font-bold text-sm">
+                  <CloudRain size={16} />
+                  <span>{weather.rain}%</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Precip Risk</span>
+              </div>
+            </div>
+          )}
+
+          {/* School Run Card */}
+          <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
+             <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">School Run</span>
+                <Navigation size={14} className="text-indigo-500" />
+             </div>
+             <div className="aspect-video rounded-xl bg-slate-200 overflow-hidden relative shadow-inner">
+                <iframe className="w-full h-full border-0" src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${encodeURIComponent(HOME_ADDRESS)}&destination=${encodeURIComponent(SCHOOL_ADDRESS)}&mode=driving`} allowFullScreen />
+             </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={() => user ? setUser(null) : tokenClient?.requestAccessToken()} 
+          className="mt-4 w-full flex items-center justify-center gap-2 p-4 rounded-2xl text-sm font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+        >
+          {user ? <LogOut size={18}/> : <LogIn size={18}/>} {user ? 'Sign Out' : 'Connect Google'}
+        </button>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-grow flex flex-col overflow-hidden">
+        <header className="bg-white border-b border-slate-200 px-8 py-6 flex items-center justify-between shadow-sm z-10">
+          <h2 className="text-2xl font-bold text-slate-800">Family Overview</h2>
+          <div className="flex items-center gap-3">
+            {loading && <RefreshCw size={18} className="text-indigo-600 animate-spin mr-2" />}
+            <div className="flex -space-x-3">
+              {FAMILY_MEMBERS.map((m, i) => (
+                <div key={m} title={m} className={`w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[11px] font-bold text-white bg-indigo-${400 + (i*100)} shadow-sm ring-1 ring-slate-100`}>{m[0]}</div>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        <section className="flex-grow p-6 overflow-hidden flex flex-col gap-6">
+          {!user ? (
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
+              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner ring-1 ring-indigo-100"><CalendarIcon size={40}/></div>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2">Sync Required</h3>
+              <p className="text-slate-500 mb-10">Authorize Google access to display your family schedule.</p>
+              <button onClick={() => tokenClient?.requestAccessToken()} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl transition-all active:scale-95">Authorize Access</button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full overflow-hidden">
+              {Object.entries(scheduleColumns).map(([key, events]) => (
+                <div key={key} className="flex flex-col h-full bg-white/50 rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="p-5 border-b border-slate-200 bg-white flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800 uppercase tracking-widest text-xs">{key}</h3>
+                    <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded-full text-slate-500">{events.length} Items</span>
+                  </div>
+                  <div className="flex-grow overflow-y-auto p-4 space-y-4 hide-scroll">
+                    {events.map(e => {
+                      const person = e.assignedTo[0] || 'Family';
+                      const config = MEMBER_CONFIG[person] || MEMBER_CONFIG['Family'];
+                      return (
+                        <div key={e.id} className={`p-4 rounded-2xl border-l-4 shadow-sm transition-all hover:scale-[1.01] ${config.color}`}>
+                          <div className="flex items-center justify-between mb-2">
+                             <div className="flex items-center gap-1.5 font-bold text-[10px] opacity-70">
+                                <Clock size={12} /> {e.start_date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                             </div>
+                             <span className="text-[9px] font-bold uppercase opacity-40">{e.calendarName}</span>
+                          </div>
+                          <p className="text-sm font-bold leading-tight mb-3 text-center">{e.summary}</p>
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {e.assignedTo.map(p => (
+                              <span key={p} className={`px-2 py-0.5 rounded-full text-[8px] font-bold text-white uppercase ${MEMBER_CONFIG[p]?.tag || 'bg-slate-400'}`}>{p}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {events.length === 0 && <div className="py-20 text-center text-slate-300 uppercase text-[10px] font-bold tracking-widest">Clear</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="bg-slate-900 rounded-2xl p-4 text-slate-400 font-mono text-[10px] h-32 overflow-y-auto flex flex-col-reverse">
+            {logs.map((log, i) => (
+              <div key={i} className={`py-0.5 ${log.includes('failed') || log.includes('error') ? 'text-rose-400' : 'text-emerald-400'}`}>{log}</div>
+            ))}
+            <div className="border-b border-slate-800 pb-1 mb-2 text-slate-500 flex justify-between items-center">
+              <span>SYSTEM MONITOR</span>
+              <button onClick={() => setLogs([])} className="hover:text-white uppercase">Clear Logs</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
+
+export default App;
